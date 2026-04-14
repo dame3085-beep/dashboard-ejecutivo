@@ -172,19 +172,27 @@ for stage in stage_order_map.keys():
 data_negocios = sorted(data_negocios, key=lambda x: x['order'])
 global_negocios_str = format_currency_short(total_negocios_val)
 
+@st.dialog("📋 Listado Detallado de Empresas", width="large")
+def show_detalle_empresas(canal_name):
+    st.write(f"Explorando datos brutos de la hoja para el canal: **{canal_name}**")
+    df_filtered = df_empresas[df_empresas['Canal'] == canal_name]
+    st.dataframe(df_filtered, use_container_width=True, hide_index=True)
+
+@st.dialog("📋 Listado Detallado de Negocios", width="large")
+def show_detalle_negocios(stage_name):
+    st.write(f"Explorando datos brutos de la hoja para la etapa: **{stage_name}**")
+    df_filtered = df_negocios[df_negocios['Etapa del negocio'].str.upper() == stage_name.upper()]
+    
+    # Reordenar columnas a petición del usuario
+    desired_order = ['Fecha de creacion', 'Propietario del negocio', 'Canal', 'Origen Empresa']
+    rest_cols = [c for c in df_filtered.columns if c not in desired_order]
+    final_order = [c for c in desired_order if c in df_filtered.columns] + rest_cols
+    
+    st.dataframe(df_filtered[final_order], use_container_width=True, hide_index=True)
+
 def render_embudo_empresas():
-    channels_html = ""
-    for ch in data_empresas['channels']:
-        channels_html += f'''
-<div class="channel-box border-{ch['class']}">
-    <div class="channel-name">{ch['name']}</div>
-    <div class="channel-reg">{ch['reg']}<span class="reg-label">reg.</span></div>
-    <div class="conversion-rate">↓ {ch['conv']}</div>
-    <div class="channel-cont-value color-{ch['class']}">{ch['cont']} <span class="reg-label" style="color:#637381;">cont.</span></div>
-</div>'''
-        
-    html_str = f"""
-<div class="funnel-container">
+    # Top block
+    html_top = f"""<div class="funnel-container" style="padding-bottom: 20px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; margin-bottom: 0;">
     <div class="date-badge">Ene — Mar 2026</div>
     <div class="main-title">JUNTA DIRECTIVA — 1Q 2026</div>
     <div class="funnel-title">Embudo de Empresas</div>
@@ -194,25 +202,53 @@ def render_embudo_empresas():
         <div class="stage-value">{data_empresas['total_registradas']}</div>
     </div>
     <div class="connector-1"></div>
-    <div class="stage-2-container">
-        <div class="stage-2-header">ETAPA 2 — DISTRIBUCIÓN POR CANAL</div>
-        <div class="channels-row">
-            {channels_html}
-        </div>
+    <div class="stage-2-container" style="box-shadow: none; margin-bottom: -10px; padding-bottom: 0;">
+        <div class="stage-2-header" style="text-align: center;">ETAPA 2 — DISTRIBUCIÓN POR CANAL</div>
     </div>
-    <div class="connector-2"></div>
+</div>"""
+    st.markdown(html_top, unsafe_allow_html=True)
+
+    # Middle block: native columns with HTML box + native button integrated
+    st.markdown('<div style="background-color: #f7f9fc; padding: 0 40px;">', unsafe_allow_html=True)
+    cols = st.columns(len(data_empresas['channels']))
+    
+    st.markdown("""<style>
+    .ch-box-native { background-color: white; border: 1px solid #eee; padding: 15px 10px; border-radius: 8px; text-align: center; margin-bottom: 5px; }
+    </style>""", unsafe_allow_html=True)
+    
+    for idx, (col_e, ch) in enumerate(zip(cols, data_empresas['channels'])):
+        with col_e:
+            ch_html = f"""<div class="ch-box-native border-{ch['class']}">
+    <div class="channel-name">{ch['name']}</div>
+    <div class="channel-reg" style="justify-content: center;">{ch['reg']}<span class="reg-label">reg.</span></div>
+    <div class="conversion-rate" style="justify-content: center;">↓ {ch['conv']}</div>
+    <div class="channel-cont-value color-{ch['class']}" style="justify-content: center;">{ch['cont']} <span class="reg-label" style="color:#637381;">cont.</span></div>
+</div>"""
+            st.markdown(ch_html, unsafe_allow_html=True)
+            if st.button("📊 Extraer", key=f"btn_emp_{idx}", use_container_width=True):
+                show_detalle_empresas(ch['name'])
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Bottom block
+    html_bot = f"""<div class="funnel-container" style="padding-top: 0; margin-top: 0; border-top-left-radius: 0; border-top-right-radius: 0;">
+    <div class="connector-2" style="margin-top: 15px;"></div>
     <div class="stage-3">
         <div><div class="stage-label">ETAPA 3</div><div class="stage-name">Contactadas</div></div>
         <div><span class="stage-value">{data_empresas['total_contactadas']}</span><span class="stage-3-pct">({data_empresas['pct_total']})</span></div>
     </div>
-</div>
-    """
-    st.markdown(html_str, unsafe_allow_html=True)
+</div>"""
+    st.markdown(html_bot, unsafe_allow_html=True)
 
 def render_embudo_negocios():
-    html_layers = ""
-    for item in data_negocios:
-        html_layers += f"""<div class="funnel-layer {item['bg']}">
+    st.markdown(f"""<div class="negocios-container" style="padding-bottom: 20px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; margin-bottom: 0;">
+    <div class="negocios-title">Embudo de Negocios</div>
+    <div class="negocios-subtitle">{total_negocios_count} negocios · Valor total <span>{global_negocios_str}</span></div>
+</div>""", unsafe_allow_html=True)
+
+    # Render funnel layers wrapped with native buttons alongside
+    st.markdown('<div style="background-color: #0b111a; padding: 0 40px; padding-bottom: 40px; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;">', unsafe_allow_html=True)
+    for i, item in enumerate(data_negocios):
+        html_layer = f"""<div class="funnel-layer {item['bg']}" style="margin-bottom: 0;">
     <div class="layer-count-group">
         <div class="layer-label">{item['label']}</div>
         <div class="layer-count">{item['count']} <span class="layer-count-label">negocios</span></div>
@@ -223,12 +259,14 @@ def render_embudo_negocios():
     </div>
 </div>"""
         
-    html_str = f"""<div class="negocios-container">
-    <div class="negocios-title">Embudo de Negocios</div>
-    <div class="negocios-subtitle">{total_negocios_count} negocios · Valor total <span>{global_negocios_str}</span></div>
-    <div style="width: 80%; margin: 0 auto;">{html_layers}</div>
-</div>"""
-    st.markdown(html_str, unsafe_allow_html=True)
+        c1, c2 = st.columns([5, 2])
+        with c1:
+            st.markdown(html_layer, unsafe_allow_html=True)
+        with c2:
+            st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True) # Spacer vertical
+            if st.button(f"🧾 Ver Info", key=f"btn_neg_{i}", use_container_width=True):
+                show_detalle_negocios(item['label'])
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def main():
     st.title("📊 Dashboard Ejecutivo")
