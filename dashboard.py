@@ -106,9 +106,16 @@ def load_data():
     xls = pd.ExcelFile(url)
     df_emp = pd.read_excel(xls, sheet_name="Empresas")
     df_neg = pd.read_excel(xls, sheet_name="Negocios")
-    return df_emp, df_neg
+    
+    # Si la hoja se llama Fidelización o es la 4ta (index 3)
+    try:
+        df_fid = pd.read_excel(xls, sheet_name="Fidelización", header=0)
+    except:
+        df_fid = pd.read_excel(xls, sheet_name=3, header=0)
+        
+    return df_emp, df_neg, df_fid
 
-df_empresas_raw, df_negocios_raw = load_data()
+df_empresas_raw, df_negocios_raw, df_fid_raw = load_data()
 
 # --- Procesando EMPRESAS ---
 df_empresas = df_empresas_raw.copy()
@@ -172,6 +179,65 @@ for stage in stage_order_map.keys():
 data_negocios = sorted(data_negocios, key=lambda x: x['order'])
 global_negocios_str = format_currency_short(total_negocios_val)
 
+# --- Procesando FIDELIZACION ---
+import math
+df_fidel = df_fid_raw.dropna(subset=['Canal', 'Categoria'], how='all').reset_index(drop=True)
+fidel_counts = df_fidel['Categoria'].value_counts()
+total_fidel = fidel_counts.sum()
+
+fidel_colors = ['#1a73e8', '#28a745', '#9370db', '#ea4335', '#d28c46', '#12b5cb', '#003380', '#00994d']
+gradient_stops = []
+labels_html = ""
+legend_html = ""
+data_fidel_list = []
+
+current_pct = 0
+color_idx = 0
+
+for cat, count in fidel_counts.items():
+    pct = count / total_fidel if total_fidel > 0 else 0
+    start_deg = current_pct * 360
+    end_deg = (current_pct + pct) * 360
+    
+    color = fidel_colors[color_idx % len(fidel_colors)]
+    gradient_stops.append(f"{color} {start_deg}deg {end_deg}deg")
+    
+    mid_angle_deg = start_deg + (pct * 360) / 2
+    mid_angle_rad = math.radians(mid_angle_deg)
+    
+    # Radius math pointing text inside the Donut slice
+    rx = 50 + math.sin(mid_angle_rad) * 35
+    ry = 50 - math.cos(mid_angle_rad) * 35
+    
+    letter = str(cat)[0].upper() if pd.notna(cat) and str(cat) else "?"
+    pct_str = f"{(pct * 100):.1f}%"
+    display_text = f"{letter}<br><span style='font-size:14px; font-weight:normal;'>{pct_str}</span>"
+    labels_html += f'<div style="position: absolute; top: {ry}%; left: {rx}%; transform: translate(-50%, -50%); color: white; font-weight: bold; font-size: 22px; text-shadow: 1px 1px 3px rgba(0,0,0,0.6); z-index: 10; text-align: center; line-height: 1.1;">{display_text}</div>'
+    
+    legend_html += f"""<div style="display: flex; align-items: center; margin-bottom: 5px;">
+<div style="width: 14px; height: 14px; background-color: {color}; border-radius: 3px; margin-right: 8px;"></div>
+<div style="color: #1a2b49; font-size: 13px; font-weight: 500;">{cat} <span style="color:#637381; font-size:11px;">({count} — {pct_str})</span></div>
+</div>"""
+    
+    data_fidel_list.append({"cat": cat, "count": count, "color": color})
+    current_pct += pct
+    color_idx += 1
+
+gradient_str = ", ".join(gradient_stops)
+
+chart_html = f"""<div style="display: flex; align-items: center; justify-content: center; gap: 40px; margin: 20px 0;">
+<div style="position: relative; width: 280px; height: 280px; border-radius: 50%; background: conic-gradient({gradient_str}); box-shadow: 0 6px 16px rgba(0,0,0,0.15);">
+<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 140px; height: 140px; background-color: #f7f9fc; border-radius: 50%; display: flex; align-items: center; justify-content: center; z-index: 5;">
+<div style="text-align: center; color: #1a2b49; font-size: 30px; font-weight: bold;">{total_fidel}</div>
+</div>
+{labels_html}
+</div>
+<div style="display: flex; flex-direction: column;">
+<div style="font-size:11px; color:#637381; text-transform:uppercase; letter-spacing:1px; margin-bottom: 10px; font-weight: 600;">Convenciones</div>
+{legend_html}
+</div>
+</div>"""
+
 @st.dialog("📋 Listado Detallado de Empresas", width="large")
 def show_detalle_empresas(canal_name):
     st.write(f"Explorando datos brutos de la hoja para el canal: **{canal_name}**")
@@ -189,6 +255,27 @@ def show_detalle_negocios(stage_name):
     final_order = [c for c in desired_order if c in df_filtered.columns] + rest_cols
     
     st.dataframe(df_filtered[final_order], use_container_width=True, hide_index=True)
+
+@st.dialog("📋 Detalles Fidelización", width="large")
+def show_detalle_fidel(categoria_name):
+    st.write(f"Empresas en la categoría de Fidelización: **{categoria_name}**")
+    df_filtered = df_fidel[df_fidel['Categoria'] == categoria_name]
+    st.dataframe(df_filtered, use_container_width=True, hide_index=True)
+
+def render_fidelizacion():
+    st.markdown('<div class="funnel-container" style="margin-top: 20px;">', unsafe_allow_html=True)
+    st.markdown('<div class="funnel-title" style="text-align:center;">Fidelización de Clientes</div>', unsafe_allow_html=True)
+    st.markdown(chart_html, unsafe_allow_html=True)
+    
+    st.markdown("<p style='text-align:center; color:#637381; font-size: 11px; text-transform: uppercase;'>Desglose de categoría:</p>", unsafe_allow_html=True)
+    
+    cols = st.columns(len(data_fidel_list))
+    for idx, (col, item) in enumerate(zip(cols, data_fidel_list)):
+        with col:
+            if st.button(f"🔍 {item['cat']}", key=f"btn_fid_{idx}", use_container_width=True):
+                show_detalle_fidel(item['cat'])
+                
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def render_embudo_empresas():
     # Top block
@@ -284,6 +371,12 @@ def main():
         render_embudo_empresas()
     with col2:
         render_embudo_negocios()
+        
+    st.markdown("<br>", unsafe_allow_html=True)
+    # Centering the donut chart below taking up an appropriate width space
+    col_l, col_m, col_r = st.columns([1, 2, 1])
+    with col_m:
+        render_fidelizacion()
 
 if __name__ == "__main__":
     main()
