@@ -103,7 +103,7 @@ st.markdown(textwrap.dedent("""
     .layer-val-label { font-size: 10px; font-weight: normal; opacity: 0.8; display: block; margin-top: 2px;}
 
     /* Anchuras y colores con paleta corporativa */
-    .bg-asignado   { background-color: #2e2e2b; color: #C7AB72; width: 100%; }
+    .bg-asignado   { background-color: #FFFFFF; color: #1D1D1B; border: 1px solid #e8e4dc; width: 100%; }
     .bg-contactado { background-color: #3d3d3a; color: white;   width: 88%; }
     .bg-negociacion{ background-color: #C7AB72; color: #1D1D1B; width: 80%; }
     .bg-ganada     { background-color: #589642; color: white;   width: 70%; }
