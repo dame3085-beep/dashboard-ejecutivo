@@ -212,8 +212,7 @@ def render_embudo_empresas():
 def render_embudo_negocios():
     html_layers = ""
     for item in data_negocios:
-        html_layers += f"""
-<div class="funnel-layer {item['bg']}">
+        html_layers += f"""<div class="funnel-layer {item['bg']}">
     <div class="layer-count-group">
         <div class="layer-label">{item['label']}</div>
         <div class="layer-count">{item['count']} <span class="layer-count-label">negocios</span></div>
@@ -222,18 +221,13 @@ def render_embudo_negocios():
         <div class="layer-value">{item['val']}</div>
         <div class="layer-val-label">valor total</div>
     </div>
-</div>
-        """
+</div>"""
         
-    html_str = f"""
-<div class="negocios-container">
+    html_str = f"""<div class="negocios-container">
     <div class="negocios-title">Embudo de Negocios</div>
     <div class="negocios-subtitle">{total_negocios_count} negocios · Valor total <span>{global_negocios_str}</span></div>
-    <div style="width: 80%; margin: 0 auto;">
-        {html_layers}
-    </div>
-</div>
-    """
+    <div style="width: 80%; margin: 0 auto;">{html_layers}</div>
+</div>"""
     st.markdown(html_str, unsafe_allow_html=True)
 
 def main():
