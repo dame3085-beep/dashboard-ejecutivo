@@ -47,16 +47,16 @@ st.markdown(textwrap.dedent("""
     
     .border-retail { border-top: 4px solid #1D1D1B; } 
     .border-food { border-top: 4px solid #589642; } 
-    .border-valores { border-top: 4px solid #C7AB72; } 
     .border-distribuidor { border-top: 4px solid #C7AB72; }
+    .border-grandes { border-top: 4px solid #8a7452; }
     .channel-name { font-size: 14px; font-weight: 600; color: #1D1D1B; margin-bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .channel-reg { font-size: 26px; font-weight: bold; color: #1D1D1B; display: flex; align-items: baseline; }
     .reg-label { font-size: 10px; font-weight: normal; color: #6b6b69; margin-left: 3px; }
     .channel-cont-value { font-size: 20px; font-weight: bold; display: flex; align-items: baseline; }
     .color-retail { color: #1D1D1B; } 
     .color-food { color: #589642; } 
-    .color-valores { color: #C7AB72; } 
-    .color-distribuidor { color: #8a7452; }
+    .color-distribuidor { color: #C7AB72; } 
+    .color-grandes { color: #8a7452; }
     .conversion-rate { font-size: 12px; color: #6b6b69; margin: 8px 0; display: flex; align-items: center; }
     .conversion-rate svg { margin-right: 3px; width: 10px; height: 10px; }
     .stage-3-pct { font-size: 18px; font-weight: normal; margin-left: 8px; opacity: 0.9; }
@@ -140,12 +140,28 @@ df_empresas_raw, df_negocios_raw, df_fid_raw, df_roi_raw = load_data()
 # --- Procesando EMPRESAS ---
 df_empresas = df_empresas_raw.copy()
 
+# Normalización de Canales
+def normalize_canal(ch):
+    ch = str(ch).strip()
+    if ch in ['Distribuidor', 'Distribuidores', 'Institucional']:
+        return 'Distribuidor'
+    if ch in ['Grandes Superficies', 'Grandes Super']:
+        return 'Grandes Superficies'
+    return ch
+
+df_empresas['Canal_Norm'] = df_empresas['Canal'].apply(normalize_canal)
+
 channels_data = []
-# Valores ha sido retirado del embudo de Empresas
-class_map = {'Retail': 'retail', 'Food Service': 'food', 'Distribuidor': 'distribuidor'}
+# Mapeo de categorías para visualización
+class_map = {
+    'Retail': 'retail', 
+    'Food Service': 'food', 
+    'Distribuidor': 'distribuidor',
+    'Grandes Superficies': 'grandes'
+}
 
 # Recalcular totales solo sobre los canales activos
-df_empresas_active = df_empresas[df_empresas['Canal'].isin(class_map.keys())]
+df_empresas_active = df_empresas[df_empresas['Canal_Norm'].isin(class_map.keys())]
 total_registradas = len(df_empresas_active.dropna(subset=['ID de registro']))
 total_contactadas = (df_empresas_active['CONTACTADO'].sum()
     if pd.api.types.is_bool_dtype(df_empresas_active['CONTACTADO'])
@@ -153,7 +169,7 @@ total_contactadas = (df_empresas_active['CONTACTADO'].sum()
 pct_total = f"{(total_contactadas/total_registradas)*100:.1f}%" if total_registradas > 0 else "0%"
 
 for ch_name in class_map.keys():
-    df_ch = df_empresas[df_empresas['Canal'] == ch_name]
+    df_ch = df_empresas[df_empresas['Canal_Norm'] == ch_name]
     reg = len(df_ch)
     cont = df_ch['CONTACTADO'].sum() if pd.api.types.is_bool_dtype(df_ch['CONTACTADO']) else (df_ch['CONTACTADO'] == True).sum()
     conv = f"{(cont/reg)*100:.1f}%" if reg > 0 else "0.0%"
@@ -338,7 +354,7 @@ def render_roi_metrics():
 @st.dialog("📋 Listado Detallado de Empresas", width="large")
 def show_detalle_empresas(canal_name):
     st.write(f"Explorando datos brutos de la hoja para el canal: **{canal_name}**")
-    df_filtered = df_empresas[df_empresas['Canal'] == canal_name]
+    df_filtered = df_empresas[df_empresas['Canal_Norm'] == canal_name]
     st.dataframe(df_filtered, use_container_width=True, hide_index=True)
 
 @st.dialog("📋 Listado Detallado de Negocios", width="large")
