@@ -477,14 +477,14 @@ def main():
         render_embudo_negocios()
         
     st.markdown("<br>", unsafe_allow_html=True)
-    # Centering the donut chart below taking up an appropriate width space
-    col_l, col_m, col_r = st.columns([1, 2, 1])
-    with col_m:
-        render_fidelizacion()
+    # Fidelización (Comentado por solicitud del usuario)
+    # col_l, col_m, col_r = st.columns([1, 2, 1])
+    # with col_m:
+    #     render_fidelizacion()
     
-    # ROI al fondo
-    st.markdown("<hr style='margin: 30px 0; opacity: 0.1;'>", unsafe_allow_html=True)
-    render_roi_metrics()
+    # ROI al fondo (Comentado por solicitud del usuario)
+    # st.markdown("<hr style='margin: 30px 0; opacity: 0.1;'>", unsafe_allow_html=True)
+    # render_roi_metrics()
 
 if __name__ == "__main__":
     main()
