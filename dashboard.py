@@ -142,12 +142,16 @@ df_empresas = df_empresas_raw.copy()
 
 # Normalización de Canales
 def normalize_canal(ch):
-    ch = str(ch).strip()
-    if ch in ['Distribuidor', 'Distribuidores', 'Institucional']:
+    ch_upper = str(ch).strip().upper()
+    if ch_upper in ['DISTRIBUIDOR', 'DISTRIBUIDORES', 'INSTITUCIONAL']:
         return 'Distribuidor'
-    if ch in ['Grandes Superficies', 'Grandes Super']:
+    if ch_upper in ['GRANDES SUPERFICIES', 'GRANDES SUPER']:
         return 'Grandes Superficies'
-    return ch
+    if ch_upper == 'RETAIL':
+        return 'Retail'
+    if ch_upper in ['FOOD SERVICE', 'FOODSERVICE']:
+        return 'Food Service'
+    return str(ch).strip()
 
 df_empresas['Canal_Norm'] = df_empresas['Canal'].apply(normalize_canal)
 
@@ -399,7 +403,7 @@ def render_fidelizacion():
 def render_embudo_empresas():
     # Top block
     html_top = f"""<div class="funnel-container" style="padding-bottom: 20px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; margin-bottom: 0;">
-    <div class="date-badge">Ene — Mar 2026</div>
+    <div class="date-badge">Ene — Abr 2026</div>
     <div class="main-title">JUNTA DIRECTIVA — 1Q 2026</div>
     <div class="funnel-title">Embudo de Empresas</div>
     <div class="funnel-subtitle">Registradas → Canal → Contactadas por canal</div>
