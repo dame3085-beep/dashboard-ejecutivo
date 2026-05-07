@@ -197,6 +197,9 @@ def format_currency_short(val):
     elif val >= 1_000: return f"${val/1_000:.1f}k"
     else: return f"${val:.0f}"
 
+# Normalizamos la columna para quitar tildes en 'ó' y manejar espacios extra
+df_negocios['Etapa del negocio'] = df_negocios['Etapa del negocio'].str.strip().str.replace('ó', 'o').str.replace('Ó', 'O')
+
 group_neg = df_negocios.groupby('Etapa del negocio')['Valor'].agg(['count', 'sum']).reset_index()
 
 stage_order_map = {
@@ -404,7 +407,7 @@ def render_embudo_empresas():
     # Top block
     html_top = f"""<div class="funnel-container" style="padding-bottom: 20px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; margin-bottom: 0;">
     <div class="date-badge">Ene — Abr 2026</div>
-    <div class="main-title">JUNTA DIRECTIVA — 1Q 2026</div>
+    <div class="main-title">REPORTE</div>
     <div class="funnel-title">Embudo de Empresas</div>
     <div class="funnel-subtitle">Registradas → Canal → Contactadas por canal</div>
     <div class="stage-1">
