@@ -554,12 +554,51 @@ def render_gestion_contactos():
     df_kpi['motivo de contacto'] = df_kpi['motivo de contacto'].fillna('').astype(str).str.strip()
     df_kpi['conteste/no conteste'] = df_kpi['conteste/no conteste'].fillna('').astype(str).str.strip()
     
-    total_llamadas = len(df_kpi)
-    is_spam = df_kpi['motivo de contacto'].str.lower() == 'spam'
+    # Identify date column for filtering
+    fecha_col = None
+    for c in df_kpi.columns:
+        if 'fecha' in c:
+            fecha_col = c
+            break
+            
+    if fecha_col:
+        temp_dates = pd.to_datetime(df_kpi[fecha_col], errors='coerce')
+        df_kpi['Mes_Filtro'] = temp_dates.dt.strftime('%Y-%m').fillna('Desconocido')
+    else:
+        df_kpi['Mes_Filtro'] = 'Desconocido'
+        
+    st.markdown("### 🔍 Filtros")
+    f_col1, f_col2, f_col3 = st.columns(3)
+    
+    with f_col1:
+        meses_disp = sorted([m for m in df_kpi['Mes_Filtro'].unique() if m != 'Desconocido'])
+        if 'Desconocido' in df_kpi['Mes_Filtro'].unique():
+            meses_disp.append('Desconocido')
+        sel_mes = st.selectbox("📅 Mes", ['Todos'] + meses_disp)
+        
+    with f_col2:
+        motivos_disp = sorted([m for m in df_kpi['motivo de contacto'].unique() if m != ''])
+        sel_motivo = st.selectbox("🏷️ Motivo de Contacto", ['Todos'] + motivos_disp)
+        
+    with f_col3:
+        estados_disp = sorted([e for e in df_kpi['conteste/no conteste'].unique() if e != ''])
+        sel_estado = st.selectbox("✅ Estado (Contestó)", ['Todos'] + estados_disp)
+        
+    # Apply Filters
+    df_filtered = df_kpi.copy()
+    if sel_mes != 'Todos':
+        df_filtered = df_filtered[df_filtered['Mes_Filtro'] == sel_mes]
+    if sel_motivo != 'Todos':
+        df_filtered = df_filtered[df_filtered['motivo de contacto'] == sel_motivo]
+    if sel_estado != 'Todos':
+        df_filtered = df_filtered[df_filtered['conteste/no conteste'] == sel_estado]
+    
+    total_llamadas = len(df_filtered)
+    is_spam = df_filtered['motivo de contacto'].str.lower() == 'spam'
     spam_count = is_spam.sum()
     efectivas = total_llamadas - spam_count
     
-    df_efectivas = df_kpi[~is_spam]
+    df_efectivas = df_filtered[~is_spam]
     is_conteste = df_efectivas['conteste/no conteste'].str.lower() == 'conteste'
     atendidas = is_conteste.sum()
     ind_atencion = (atendidas / efectivas * 100) if efectivas > 0 else 0
@@ -640,20 +679,16 @@ def render_gestion_contactos():
         st.bar_chart(motivos_counts.set_index('Motivo'), color="#C7AB72")
         
     with c_chart2:
-        # Intentar obtener la columna de fecha (puede tener nombre ligeramente diferente)
-        fecha_col = None
-        for c in df_kpi.columns:
-            if 'fecha' in c:
-                fecha_col = c
-                break
-                
         if fecha_col:
             st.write("**Volumen Diario (Efectivas)**")
             try:
                 df_efectivas_dates = df_efectivas.copy()
                 df_efectivas_dates[fecha_col] = pd.to_datetime(df_efectivas_dates[fecha_col], errors='coerce')
                 df_trend = df_efectivas_dates.groupby(df_efectivas_dates[fecha_col].dt.date).size()
-                st.line_chart(df_trend, color="#589642")
+                if not df_trend.empty:
+                    st.line_chart(df_trend, color="#589642")
+                else:
+                    st.write("No hay datos de fecha válidos con los filtros actuales.")
             except Exception as e:
                 st.write("Datos de fecha no procesables para gráfico.", e)
         else:
@@ -661,7 +696,8 @@ def render_gestion_contactos():
                 
     st.markdown("---")
     st.subheader("📋 Registro Completo")
-    st.dataframe(df_kpi_raw, use_container_width=True, hide_index=True)
+    df_display = df_kpi_raw.loc[df_filtered.index] if not df_filtered.empty else df_kpi_raw.iloc[0:0]
+    st.dataframe(df_display, use_container_width=True, hide_index=True)
 
 def main():
     with st.sidebar:
