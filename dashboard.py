@@ -3,7 +3,7 @@ import textwrap
 import pandas as pd
 
 # ==== CONFIGURACIÓN DE PÁGINA ====
-st.set_page_config(page_title="Dashboard Directivo", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Dashboard Directivo", layout="wide", initial_sidebar_state="expanded")
 
 # ==== CSS PERSONALIZADO ====
 st.markdown(textwrap.dedent("""
@@ -133,9 +133,18 @@ def load_data():
     except:
         df_roi = pd.read_excel(xls, sheet_name=4, header=None)
         
-    return df_emp, df_neg, df_fid, df_roi
+    # Hoja KPI Negocios
+    try:
+        df_kpi = pd.read_excel(xls, sheet_name="KPI Negocios")
+    except:
+        try:
+            df_kpi = pd.read_excel(xls, sheet_name="GESTIÓN DE CONTACTOS")
+        except:
+            df_kpi = pd.DataFrame(columns=['fecha de contacto', 'Hora', 'motivo de contacto', 'número de contacto', 'Conteste/No conteste', 'nombre'])
+            
+    return df_emp, df_neg, df_fid, df_roi, df_kpi
 
-df_empresas_raw, df_negocios_raw, df_fid_raw, df_roi_raw = load_data()
+df_empresas_raw, df_negocios_raw, df_fid_raw, df_roi_raw, df_kpi_raw = load_data()
 
 # --- Procesando EMPRESAS ---
 df_empresas = df_empresas_raw.copy()
@@ -481,14 +490,14 @@ def render_embudo_negocios():
                 show_detalle_negocios(item['label'])
     st.markdown('</div>', unsafe_allow_html=True)
 
-def main():
+def render_dashboard_ejecutivo():
     st.title("📊 Dashboard Ejecutivo")
     
     col_hz1, col_hz2 = st.columns([4, 1])
     with col_hz1:
-        st.write("Conectado directamente a 'KPI Negocios'. Tiempo de actualización base: 5 seg.")
+        st.write("Conectado directamente a Google Sheets. Tiempo de actualización base: 5 seg.")
     with col_hz2:
-        if st.button("🔄 Forzar Recarga de Datos", use_container_width=True):
+        if st.button("🔄 Forzar Recarga de Datos", use_container_width=True, key="reload_ejecutivo"):
             st.cache_data.clear()
             st.rerun()
     
@@ -500,14 +509,175 @@ def main():
         render_embudo_negocios()
         
     st.markdown("<br>", unsafe_allow_html=True)
-    # Fidelización (Comentado por solicitud del usuario)
-    # col_l, col_m, col_r = st.columns([1, 2, 1])
-    # with col_m:
-    #     render_fidelizacion()
+
+def render_gestion_contactos():
+    col_hz1, col_hz2 = st.columns([4, 1])
+    with col_hz1:
+        st.title("📞 Gestión de Contactos")
+    with col_hz2:
+        if st.button("🔄 Forzar Recarga", use_container_width=True, key="reload_gestion"):
+            st.cache_data.clear()
+            st.rerun()
+            
+    df_kpi = df_kpi_raw.copy()
     
-    # ROI al fondo (Comentado por solicitud del usuario)
-    # st.markdown("<hr style='margin: 30px 0; opacity: 0.1;'>", unsafe_allow_html=True)
-    # render_roi_metrics()
+    if df_kpi.empty:
+        st.warning("No se encontraron datos de la hoja 'KPI Negocios' o 'GESTIÓN DE CONTACTOS'.")
+        return
+        
+    # Clean up columns for robust matching
+    original_cols = df_kpi.columns.tolist()
+    df_kpi.columns = [str(c).strip().lower() for c in df_kpi.columns]
+    
+    # Check for required columns
+    required = ['motivo de contacto', 'conteste/no conteste']
+    missing = [c for c in required if c not in df_kpi.columns]
+    if missing:
+        st.warning(f"Faltan columnas requeridas en la hoja: {missing}. Encontradas: {df_kpi.columns.tolist()}")
+        # Intento de corrección para nombres parecidos si es posible
+        if 'motivo de contacto' not in df_kpi.columns:
+            for c in df_kpi.columns:
+                if 'motivo' in c:
+                    df_kpi.rename(columns={c: 'motivo de contacto'}, inplace=True)
+        if 'conteste/no conteste' not in df_kpi.columns:
+            for c in df_kpi.columns:
+                if 'conteste' in c:
+                    df_kpi.rename(columns={c: 'conteste/no conteste'}, inplace=True)
+                    
+    # Re-check after potential rename
+    if 'motivo de contacto' not in df_kpi.columns or 'conteste/no conteste' not in df_kpi.columns:
+        st.error("No se pudo procesar la información por diferencias en los nombres de las columnas.")
+        st.dataframe(df_kpi_raw)
+        return
+    
+    # Process
+    df_kpi['motivo de contacto'] = df_kpi['motivo de contacto'].fillna('').astype(str).str.strip()
+    df_kpi['conteste/no conteste'] = df_kpi['conteste/no conteste'].fillna('').astype(str).str.strip()
+    
+    total_llamadas = len(df_kpi)
+    is_spam = df_kpi['motivo de contacto'].str.lower() == 'spam'
+    spam_count = is_spam.sum()
+    efectivas = total_llamadas - spam_count
+    
+    df_efectivas = df_kpi[~is_spam]
+    is_conteste = df_efectivas['conteste/no conteste'].str.lower() == 'conteste'
+    atendidas = is_conteste.sum()
+    ind_atencion = (atendidas / efectivas * 100) if efectivas > 0 else 0
+    
+    cotizar = (df_efectivas['motivo de contacto'].str.lower() == 'cotizar').sum()
+    redirigido = (df_efectivas['motivo de contacto'].str.lower() == 'redirigido a distribuidor').sum()
+    
+    # CSS
+    st.markdown("""
+    <style>
+    .kpi-card { padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #e8e4dc; }
+    .kpi-card-black { background-color: #1D1D1B; color: white; }
+    .kpi-card-green { background-color: #589642; color: white; }
+    .kpi-card-white { background-color: white; color: #1D1D1B; }
+    .kpi-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; font-weight: 600; }
+    .kpi-label-muted { opacity: 0.8; }
+    .kpi-value { font-size: 38px; font-weight: bold; line-height: 1.1; margin-bottom: 2px; }
+    .kpi-sub { font-size: 11px; opacity: 0.8; }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Top Row
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown(f"""
+        <div class="kpi-card kpi-card-black">
+            <div class="kpi-label kpi-label-muted" style="color: #C7AB72;">Total Llamadas</div>
+            <div class="kpi-value">{total_llamadas}</div>
+            <div class="kpi-sub">Volumen Bruto</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"""
+        <div class="kpi-card kpi-card-green">
+            <div class="kpi-label kpi-label-muted">Llamadas Efectivas</div>
+            <div class="kpi-value">{efectivas}</div>
+            <div class="kpi-sub">Total - Spam ({spam_count} descartadas)</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with c3:
+        color_at = "#589642" if ind_atencion >= 70 else ("#C7AB72" if ind_atencion >= 50 else "#a63c3c")
+        st.markdown(f"""
+        <div class="kpi-card kpi-card-white">
+            <div class="kpi-label" style="color: #6b6b69;">Indicador de Atención</div>
+            <div class="kpi-value" style="color: {color_at};">{ind_atencion:.1f}%</div>
+            <div class="kpi-sub" style="color: #6b6b69;">Contestadas / Efectivas ({atendidas}/{efectivas})</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    # Bottom Row
+    c4, c5 = st.columns(2)
+    with c4:
+        st.markdown(f"""
+        <div class="kpi-card kpi-card-white" style="border-top: 4px solid #589642;">
+            <div class="kpi-label" style="color: #1D1D1B;">Interés de Compra (Cotizar)</div>
+            <div class="kpi-value" style="color: #1D1D1B;">{cotizar}</div>
+            <div class="kpi-sub" style="color: #6b6b69;">Prospectos Directos</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with c5:
+        st.markdown(f"""
+        <div class="kpi-card kpi-card-white" style="border-top: 4px solid #C7AB72;">
+            <div class="kpi-label" style="color: #1D1D1B;">Redirección a Distribuidor</div>
+            <div class="kpi-value" style="color: #1D1D1B;">{redirigido}</div>
+            <div class="kpi-sub" style="color: #6b6b69;">No cumplen mínimo de prod.</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    st.markdown("---")
+    st.subheader("📊 Análisis (Llamadas Efectivas)")
+    
+    c_chart1, c_chart2 = st.columns([1, 1])
+    
+    with c_chart1:
+        st.write("**Distribución por Motivo**")
+        motivos_counts = df_efectivas['motivo de contacto'].value_counts().reset_index()
+        motivos_counts.columns = ['Motivo', 'Cantidad']
+        st.bar_chart(motivos_counts.set_index('Motivo'), color="#C7AB72")
+        
+    with c_chart2:
+        # Intentar obtener la columna de fecha (puede tener nombre ligeramente diferente)
+        fecha_col = None
+        for c in df_kpi.columns:
+            if 'fecha' in c:
+                fecha_col = c
+                break
+                
+        if fecha_col:
+            st.write("**Volumen Diario (Efectivas)**")
+            try:
+                df_efectivas_dates = df_efectivas.copy()
+                df_efectivas_dates[fecha_col] = pd.to_datetime(df_efectivas_dates[fecha_col], errors='coerce')
+                df_trend = df_efectivas_dates.groupby(df_efectivas_dates[fecha_col].dt.date).size()
+                st.line_chart(df_trend, color="#589642")
+            except Exception as e:
+                st.write("Datos de fecha no procesables para gráfico.", e)
+        else:
+            st.write("Columna de fecha no encontrada para tendencia.")
+                
+    st.markdown("---")
+    st.subheader("📋 Registro Completo")
+    st.dataframe(df_kpi_raw, use_container_width=True, hide_index=True)
+
+def main():
+    with st.sidebar:
+        st.markdown("""
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h2 style="color: #1D1D1B; margin-bottom: 0;">DITAR</h2>
+            <div style="color: #C7AB72; font-size: 12px; letter-spacing: 2px;">DASHBOARD</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        page = st.radio("Navegación", ["Dashboard Ejecutivo", "GESTIÓN DE CONTACTOS"])
+        
+    if page == "Dashboard Ejecutivo":
+        render_dashboard_ejecutivo()
+    else:
+        render_gestion_contactos()
 
 if __name__ == "__main__":
     main()
