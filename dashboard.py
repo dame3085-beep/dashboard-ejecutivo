@@ -699,6 +699,159 @@ def render_gestion_contactos():
     df_display = df_kpi_raw.loc[df_filtered.index] if not df_filtered.empty else df_kpi_raw.iloc[0:0]
     st.dataframe(df_display, use_container_width=True, hide_index=True)
 
+def render_manychat_stats():
+    st.title("🤖 Métricas ManyChat")
+    
+    st.markdown("""
+    <div style="background-color: #1D1D1B; color: white; padding: 25px; border-radius: 12px; margin-bottom: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+        <h3 style="color: #C7AB72; margin-top: 0; font-size: 24px;">Resumen Ejecutivo</h3>
+        <p style="font-size: 15px; line-height: 1.6; color: #f0f0f0;">El flujo muestra un volumen alto de interacción inicial, con una base principal en español. El punto más fuerte del embudo es la pregunta de interés principal, con una tasa de clic aproximada de <strong style="color:#589642;">97.2%</strong> sobre <strong>17,620 mensajes enviados</strong>. La mayor intención declarada es <strong>Cotizar Producto</strong>, con aproximadamente <strong>7,048 interacciones estimadas</strong>.</p>
+        <p style="font-size: 15px; line-height: 1.6; color: #f0f0f0;">En la segmentación comercial, predominan los usuarios que se identifican como <strong>Marca</strong>, con un CTR de <strong style="color:#589642;">83%</strong>, frente a Distribuidor con 18%. En sectores, los más relevantes son Restaurantes/Food Service y Moda/Retail. En productos, el mayor interés está en <strong>Bolsas</strong>, seguido por Cajas Plegadizas.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # KPIs Top
+    st.markdown("<h3 style='color: #1D1D1B; margin-bottom: 20px;'>🏆 Indicadores Principales Gerenciales</h3>", unsafe_allow_html=True)
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    with kpi1:
+        st.markdown(f"""
+        <div class="kpi-card kpi-card-black" style="padding: 25px;">
+            <div class="kpi-label kpi-label-muted" style="color: #C7AB72;">Mensajes Iniciales</div>
+            <div class="kpi-value" style="font-size: 42px;">19,495</div>
+            <div class="kpi-sub">Enviados</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with kpi2:
+        st.markdown(f"""
+        <div class="kpi-card kpi-card-green" style="padding: 25px;">
+            <div class="kpi-label kpi-label-muted">Tasa de Entrega</div>
+            <div class="kpi-value" style="font-size: 42px;">99.8%</div>
+            <div class="kpi-sub">Inicial</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with kpi3:
+        st.markdown(f"""
+        <div class="kpi-card kpi-card-white" style="padding: 25px;">
+            <div class="kpi-label" style="color: #6b6b69;">Clic Interés Princ.</div>
+            <div class="kpi-value" style="color: #589642; font-size: 42px;">97.2%</div>
+            <div class="kpi-sub" style="color: #6b6b69;">17,620 usuarios</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with kpi4:
+        st.markdown(f"""
+        <div class="kpi-card kpi-card-white" style="border-top: 4px solid #C7AB72; padding: 25px;">
+            <div class="kpi-label" style="color: #1D1D1B;">Principal Intención</div>
+            <div class="kpi-value" style="color: #1D1D1B; font-size: 32px; padding-top: 10px;">Cotizar</div>
+            <div class="kpi-sub" style="color: #6b6b69;">Producto</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    
+    # Tablas de datos estáticos
+    col_chart1, col_chart2 = st.columns(2, gap="large")
+    
+    with col_chart1:
+        st.markdown("<h4 style='color: #1D1D1B;'>🎯 Interés Principal</h4>", unsafe_allow_html=True)
+        df_interes = pd.DataFrame({
+            'Opción': ['Cotizar Producto', 'Ser Proveedor', 'Vacantes'],
+            'Clics Estimados': [7048, 529, 705]
+        }).set_index('Opción')
+        st.bar_chart(df_interes, color="#C7AB72")
+        
+        st.markdown("<h4 style='color: #1D1D1B; margin-top: 30px;'>💼 Perfil Comercial</h4>", unsafe_allow_html=True)
+        df_perfil = pd.DataFrame({
+            'Perfil': ['Soy una Marca', 'Soy un Distribuidor'],
+            'Clics Estimados': [5788, 1255]
+        }).set_index('Perfil')
+        st.bar_chart(df_perfil, color="#589642")
+        
+        st.markdown("<h4 style='color: #1D1D1B; margin-top: 30px;'>📦 Productos de Mayor Interés</h4>", unsafe_allow_html=True)
+        df_productos = pd.DataFrame({
+            'Producto': ['Bolsas', 'Cajas Plegadizas', 'Otros productos', 'Papel antigrasa', 'Papel de seda', 'Rollos POS', 'Impresos a demanda', 'Doc. de seguridad'],
+            'Clics Estimados': [3773, 1213, 404, 269, 67, 67, 67, 67]
+        }).set_index('Producto')
+        st.bar_chart(df_productos, color="#1D1D1B")
+        
+    with col_chart2:
+        st.markdown("<h4 style='color: #1D1D1B;'>🌍 Idioma</h4>", unsafe_allow_html=True)
+        df_idioma = pd.DataFrame({
+            'Idioma': ['Español', 'English'],
+            'Clics Estimados': [7490, 168]
+        }).set_index('Idioma')
+        st.bar_chart(df_idioma, color="#589642")
+        
+        st.markdown("<h4 style='color: #1D1D1B; margin-top: 30px;'>🏭 Sector de la Marca</h4>", unsafe_allow_html=True)
+        df_sector = pd.DataFrame({
+            'Sector': ['Restaurantes / Food Service', 'Moda / Retail', 'Industrias / Otro'],
+            'Clics Estimados': [2246, 2131, 1670]
+        }).set_index('Sector')
+        st.bar_chart(df_sector, color="#C7AB72")
+        
+        st.markdown("<h4 style='color: #1D1D1B; margin-top: 30px;'>📊 Rangos de Cantidad</h4>", unsafe_allow_html=True)
+        df_cantidades = pd.DataFrame({
+            'Rango': ['Menos de 600', '600 - 1,000', '1,000 - 5,000', '5,000 - 10,000', '10,000 - 20,000', '20,000 - 50,000', '50,000 - 100,000', 'Más de 100,000'],
+            'Clics Estimados': [184, 121, 68, 29, 15, 15, 10, 15]
+        }).set_index('Rango')
+        st.bar_chart(df_cantidades, color="#589642")
+        
+    st.markdown("---")
+    st.markdown("<h3 style='color: #1D1D1B; margin-bottom: 20px;'>📋 Tablas de Detalles</h3>", unsafe_allow_html=True)
+    
+    tab1, tab2, tab3 = st.tabs(["Indicadores del Flujo", "Catálogos / Secundarios", "Flujo Inglés"])
+    
+    with tab1:
+        df_flujo = pd.DataFrame([
+            ["Mensaje inicial / bienvenida", "19,495", "99.8%", "59.9%", "Buen alcance inicial, interacción media-alta"],
+            ["Selección de idioma", "8,416", "99.9%", "90.6%", "Muy buena respuesta al selector"],
+            ["Pregunta de interés", "17,620", "100%", "97.2%", "Punto más fuerte del embudo"],
+            ["Perfil de negocio", "6,973", "100%", "97.4%", "Alta segmentación efectiva"],
+            ["Sector de la marca", "5,759", "100%", "98.6%", "Excelente tasa de respuesta"],
+            ["Selección de productos", "6,737", "100%", "80.2%", "Buena interacción"],
+            ["Tipo de producto", "823", "100%", "88.3%", "Buena intención de cotización"],
+            ["Rango de cantidades", "484", "100%", "93.0%", "Muy buena respuesta en etapa avanzada"]
+        ], columns=["Etapa", "Enviados", "Entregado", "Clic", "Lectura"])
+        st.dataframe(df_flujo, use_container_width=True, hide_index=True)
+        
+    with tab2:
+        col_t1, col_t2 = st.columns(2, gap="large")
+        with col_t1:
+            st.markdown("<strong style='color:#C7AB72;'>Catálogos Enviados</strong>", unsafe_allow_html=True)
+            df_cats = pd.DataFrame([
+                ["Food Service", "2,235", "100%", "0%"],
+                ["Moda / Retail", "2,137", "100%", "0%"],
+                ["Industria", "1,650", "100%", "0%"],
+                ["Distribuidores", "1,255", "100%", "0%"]
+            ], columns=["Material", "Enviados", "Entregado", "Clic"])
+            st.dataframe(df_cats, use_container_width=True, hide_index=True)
+        with col_t2:
+            st.markdown("<strong style='color:#589642;'>Flujos Secundarios</strong>", unsafe_allow_html=True)
+            df_sec = pd.DataFrame([
+                ["Proveedores (portafolio)", "905", "99.9%", "0%"],
+                ["Vacantes (CV)", "972", "99.9%", "0%"],
+                ["Confirmación / Referencia", "1,574", "100%", "0%"]
+            ], columns=["Ruta", "Enviados", "Entregado", "Clic"])
+            st.dataframe(df_sec, use_container_width=True, hide_index=True)
+            
+    with tab3:
+        df_eng = pd.DataFrame([
+            ["Bienvenida en inglés", "152", "100%", "18.4%"],
+            ["Perfil: Brand / Distributor", "38", "100%", "97.4%"],
+            ["Sector: Retail / Food Service / Others", "18", "100%", "83.3%"],
+            ["Preferencia de producto", "34", "100%", "100%"],
+            ["Rango de cantidad", "34", "100%", "97.1%"],
+            ["Mensaje final referencia", "33", "100%", "0%"]
+        ], columns=["Etapa Inglés", "Enviados", "Entregado", "Clic"])
+        st.dataframe(df_eng, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+    st.markdown("""
+    <div style="background-color: #f7f9fc; padding: 25px; border-left: 6px solid #C7AB72; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-top: 30px;">
+        <h4 style="color: #1D1D1B; margin-top: 0; font-size: 20px;">💡 Conclusión Principal</h4>
+        <p style="color: #6b6b69; font-size: 16px; line-height: 1.6;">ManyChat está generando alto volumen de leads comerciales, principalmente en español, con fuerte interés en cotización de bolsas y productos personalizados. El reto está en filtrar mejor por volumen de compra, porque la mayoría de solicitudes visibles se concentra en cantidades bajas.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
 def main():
     with st.sidebar:
         st.markdown("""
@@ -708,12 +861,14 @@ def main():
         </div>
         """, unsafe_allow_html=True)
         
-        page = st.radio("Navegación", ["Dashboard Ejecutivo", "GESTIÓN DE CONTACTOS"])
+        page = st.radio("Navegación", ["Dashboard Ejecutivo", "GESTIÓN DE CONTACTOS", "Métricas ManyChat"])
         
     if page == "Dashboard Ejecutivo":
         render_dashboard_ejecutivo()
-    else:
+    elif page == "GESTIÓN DE CONTACTOS":
         render_gestion_contactos()
+    else:
+        render_manychat_stats()
 
 if __name__ == "__main__":
     main()
