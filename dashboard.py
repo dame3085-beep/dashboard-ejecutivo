@@ -705,6 +705,11 @@ def render_gestion_contactos():
     df_display = df_kpi_raw.loc[df_filtered.index] if not df_filtered.empty else df_kpi_raw.iloc[0:0]
     st.dataframe(df_display, use_container_width=True, hide_index=True)
 
+@st.dialog("📋 Detalle de Leads", width="large")
+def show_detalle_manychat(df_fil, titulo):
+    st.write(f"Explorando datos para: **{titulo}**")
+    st.dataframe(df_fil, use_container_width=True, hide_index=True)
+
 def render_manychat_stats():
     st.title("🤖 Métricas ManyChat")
     
@@ -765,89 +770,101 @@ def render_manychat_stats():
     
     st.markdown("""
     <style>
-    .mc-funnel-container {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        background-color: #FFFFFF;
-        padding: 40px;
-        border-radius: 12px;
-        color: #1D1D1B;
-        margin-bottom: 30px;
-        border: 1px solid #e8e4dc;
-        box-shadow: 0 2px 8px rgba(29,29,27,0.07);
-    }
-    .mc-title { color: #1D1D1B; font-size: 28px; font-weight: bold; margin-bottom: 5px; text-align: center; }
-    .mc-subtitle { color: #6b6b69; font-size: 14px; margin-bottom: 30px; text-align: center; }
+    /* CSS Premium para Embudo ManyChat */
+    .mc-funnel-wrapper { font-family: 'Segoe UI', sans-serif; background-color: #fcfcfc; padding: 40px; border-radius: 16px; border: 1px solid #e8e4dc; box-shadow: 0 8px 24px rgba(0,0,0,0.06); margin-bottom: 10px; }
+    .mc-header { text-align: center; margin-bottom: 30px; }
+    .mc-title { color: #1D1D1B; font-size: 32px; font-weight: 800; letter-spacing: -0.5px; }
+    .mc-subtitle { color: #8a7452; font-size: 15px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
     
-    .mc-stage { border-radius: 12px; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-    .mc-stage-1 { background-color: #1D1D1B; color: white; }
-    .mc-stage-2 { background-color: #3d3d3a; color: white; margin-left: 5%; margin-right: 5%; }
+    .mc-card { border-radius: 12px; padding: 25px 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.08); transition: transform 0.2s ease; margin-bottom: 10px; }
+    .mc-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.12); }
     
-    .mc-split-container { display: flex; gap: 20px; margin-left: 10%; margin-right: 10%; margin-bottom: 15px; }
-    .mc-split-box { flex: 1; border-radius: 12px; padding: 20px; color: white; position: relative; }
-    .mc-box-cal { background-color: #589642; }
-    .mc-box-desc { background-color: #7a5c2e; }
+    .mc-bg-black { background: linear-gradient(135deg, #1D1D1B 0%, #2c2c2a 100%); color: white; }
+    .mc-bg-dark { background: linear-gradient(135deg, #3d3d3a 0%, #4d4d4a 100%); color: white; }
+    .mc-bg-green { background: linear-gradient(135deg, #589642 0%, #68b04e 100%); color: white; }
+    .mc-bg-brown { background: linear-gradient(135deg, #7a5c2e 0%, #8c6a35 100%); color: white; }
+    .mc-bg-gold { background: linear-gradient(135deg, #C7AB72 0%, #d4b87e 100%); color: #1D1D1B; border: 1px solid #e8e4dc; }
     
-    .mc-sub-box { background-color: #C7AB72; color: #1D1D1B; border-radius: 12px; padding: 15px 20px; margin-left: 55%; margin-right: 10%; margin-top: -5px; }
+    .mc-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.85; margin-bottom: 4px; font-weight: 600;}
+    .mc-name { font-size: 20px; font-weight: 700; }
+    .mc-value-group { text-align: right; }
+    .mc-value { font-size: 36px; font-weight: 800; line-height: 1; }
+    .mc-pct { font-size: 16px; font-weight: 500; opacity: 0.9; margin-left: 5px; }
     
-    .mc-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.8; margin-bottom: 5px; }
-    .mc-name { font-size: 18px; font-weight: bold; }
-    .mc-value { font-size: 32px; font-weight: bold; }
-    .mc-pct { font-size: 16px; font-weight: normal; opacity: 0.9; margin-left: 8px; }
+    .mc-arrow { text-align: center; color: #C7AB72; font-size: 24px; font-weight: bold; margin: 5px 0 15px 0; }
+    
+    .mc-split-box { flex-direction: column; align-items: flex-start; padding: 25px; margin-bottom: 10px; }
+    .mc-split-box .mc-value-group { text-align: left; margin-top: 15px; }
     </style>
     """, unsafe_allow_html=True)
     
     pct_leads_from_chats = (total_leads / total_chats * 100) if total_chats > 0 else 0
     
-    funnel_html = f"""
-<div class="mc-funnel-container">
-<div class="mc-title">Embudo de Conversión ManyChat</div>
-<div class="mc-subtitle">Mes seleccionado: {sel_mes.capitalize()}</div>
-<div class="mc-stage mc-stage-1">
-<div><div class="mc-label">Fase 1</div><div class="mc-name">Chats Totales</div></div>
-<div class="mc-value">{total_chats}</div>
-</div>
-<div style="text-align: center; color: #C7AB72; font-size: 20px; margin: -5px 0 10px 0;">↓</div>
-<div class="mc-stage mc-stage-2">
-<div><div class="mc-label">Fase 2</div><div class="mc-name">Leads Generados</div></div>
-<div class="mc-value">{total_leads} <span class="mc-pct">({pct_leads_from_chats:.1f}%)</span></div>
-</div>
-<div style="display: flex; justify-content: center; gap: 40%; margin: -5px 0 10px 0; color: #C7AB72; font-size: 20px;">
-<div>↙</div>
-<div>↘</div>
-</div>
-<div class="mc-split-container">
-<div class="mc-split-box mc-box-cal">
-<div class="mc-label">Fase 3A</div>
-<div class="mc-name">Calificados</div>
-<div style="margin-top: 10px;">
-<span class="mc-value">{calificados}</span>
-<span class="mc-pct">({pct_calificados:.1f}%)</span>
-</div>
-</div>
-<div class="mc-split-box mc-box-desc">
-<div class="mc-label">Fase 3B</div>
-<div class="mc-name">Descalificados</div>
-<div style="margin-top: 10px;">
-<span class="mc-value">{descalificados}</span>
-<span class="mc-pct">({pct_descalificados:.1f}%)</span>
-</div>
-</div>
-</div>
-<div style="text-align: right; margin: -5px 15% 10px 0; color: #C7AB72; font-size: 20px;">↓</div>
-<div class="mc-sub-box">
-<div class="mc-label" style="color: #6b6b69;">Detalle Descalificados</div>
-<div class="mc-name">Redirección a Distribuidor</div>
-<div style="margin-top: 5px;">
-<span class="mc-value" style="font-size: 26px;">{redirigidos}</span>
-<span class="mc-pct" style="color: #1D1D1B; font-weight: 500;">({pct_redirigidos:.1f}%)</span>
-</div>
-</div>
-</div>
-"""
-
+    st.markdown('<div class="mc-funnel-wrapper">', unsafe_allow_html=True)
+    st.markdown(f'<div class="mc-header"><div class="mc-title">Embudo ManyChat</div><div class="mc-subtitle">Mes: {sel_mes.capitalize()}</div></div>', unsafe_allow_html=True)
     
-    st.markdown(funnel_html, unsafe_allow_html=True)
+    # FASE 1
+    st.markdown(f'''
+    <div class="mc-card mc-bg-black">
+    <div><div class="mc-label">Fase 1</div><div class="mc-name">Chats Totales</div></div>
+    <div class="mc-value-group"><div class="mc-value">{total_chats}</div></div>
+    </div>
+    <div class="mc-arrow">↓</div>
+    ''', unsafe_allow_html=True)
     
+    # FASE 2
+    st.markdown(f'''
+    <div class="mc-card mc-bg-dark" style="margin-left: 5%; margin-right: 5%;">
+    <div><div class="mc-label">Fase 2</div><div class="mc-name">Leads Generados</div></div>
+    <div class="mc-value-group"><span class="mc-value">{total_leads}</span><span class="mc-pct">({pct_leads_from_chats:.1f}%)</span></div>
+    </div>
+    ''', unsafe_allow_html=True)
+    
+    col_b2_1, col_b2_2, col_b2_3 = st.columns([1, 2, 1])
+    with col_b2_2:
+        if st.button("🔍 Ver Todos los Leads", key="btn_mc_leads", use_container_width=True):
+            show_detalle_manychat(df_filtered, "Leads Generados")
+            
+    st.markdown('<div style="display: flex; justify-content: space-around; color: #C7AB72; font-size: 24px; font-weight: bold; margin: 5px 15% 15px 15%;"><div>↙</div><div>↘</div></div>', unsafe_allow_html=True)
+    
+    # FASE 3
+    col3a, col3b = st.columns(2, gap="large")
+    with col3a:
+        st.markdown(f'''
+        <div class="mc-card mc-split-box mc-bg-green">
+        <div><div class="mc-label">Fase 3A</div><div class="mc-name">Calificados</div></div>
+        <div class="mc-value-group"><span class="mc-value">{calificados}</span><span class="mc-pct">({pct_calificados:.1f}%)</span></div>
+        </div>
+        ''', unsafe_allow_html=True)
+        if st.button("🔍 Ver Calificados", key="btn_mc_cal", use_container_width=True):
+            show_detalle_manychat(df_filtered[df_filtered[col_etapa] == 'Calificado'], "Leads Calificados")
+            
+    with col3b:
+        st.markdown(f'''
+        <div class="mc-card mc-split-box mc-bg-brown">
+        <div><div class="mc-label">Fase 3B</div><div class="mc-name">Descalificados</div></div>
+        <div class="mc-value-group"><span class="mc-value">{descalificados}</span><span class="mc-pct">({pct_descalificados:.1f}%)</span></div>
+        </div>
+        ''', unsafe_allow_html=True)
+        if st.button("🔍 Ver Descalificados", key="btn_mc_desc", use_container_width=True):
+            show_detalle_manychat(descalificados_df, "Leads Descalificados")
+            
+    # FASE 4
+    st.markdown('<div style="text-align: right; margin: 10px 20% 15px 0; color: #C7AB72; font-size: 24px; font-weight: bold;">↓</div>', unsafe_allow_html=True)
+    
+    col4a, col4b = st.columns([1, 1])
+    with col4b:
+        st.markdown(f'''
+        <div class="mc-card mc-split-box mc-bg-gold">
+        <div><div class="mc-label" style="color: #6b6b69;">Detalle Descalificados</div><div class="mc-name">Redirigido a Distribuidor</div></div>
+        <div class="mc-value-group"><span class="mc-value" style="font-size: 30px;">{redirigidos}</span><span class="mc-pct" style="color:#1D1D1B;">({pct_redirigidos:.1f}%)</span></div>
+        </div>
+        ''', unsafe_allow_html=True)
+        if st.button("🔍 Ver Redirigidos", key="btn_mc_redir", use_container_width=True):
+            df_redir = descalificados_df[descalificados_df[col_motivo].str.lower().str.contains('distribuidor')]
+            show_detalle_manychat(df_redir, "Redirigidos a Distribuidor")
+            
+    st.markdown('</div>', unsafe_allow_html=True)
     st.markdown("---")
     st.subheader("📋 Registro Completo (Filtrado)")
     st.dataframe(df_filtered, use_container_width=True, hide_index=True)
