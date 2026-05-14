@@ -798,59 +798,53 @@ def render_manychat_stats():
     
     pct_leads_from_chats = (total_leads / total_chats * 100) if total_chats > 0 else 0
     
-    funnel_html = textwrap.dedent(f"""
-    <div class="mc-funnel-container">
-        <div class="mc-title">Embudo de Conversión ManyChat</div>
-        <div class="mc-subtitle">Mes seleccionado: {sel_mes.capitalize()}</div>
-        
-        <div class="mc-stage mc-stage-1">
-            <div><div class="mc-label">Fase 1</div><div class="mc-name">Chats Totales</div></div>
-            <div class="mc-value">{total_chats}</div>
-        </div>
-        
-        <div style="text-align: center; color: #C7AB72; font-size: 20px; margin: -5px 0 10px 0;">↓</div>
-        
-        <div class="mc-stage mc-stage-2">
-            <div><div class="mc-label">Fase 2</div><div class="mc-name">Leads Generados</div></div>
-            <div class="mc-value">{total_leads} <span class="mc-pct">({pct_leads_from_chats:.1f}%)</span></div>
-        </div>
-        
-        <div style="display: flex; justify-content: center; gap: 40%; margin: -5px 0 10px 0; color: #C7AB72; font-size: 20px;">
-            <div>↙</div>
-            <div>↘</div>
-        </div>
-        
-        <div class="mc-split-container">
-            <div class="mc-split-box mc-box-cal">
-                <div class="mc-label">Fase 3A</div>
-                <div class="mc-name">Calificados</div>
-                <div style="margin-top: 10px;">
-                    <span class="mc-value">{calificados}</span>
-                    <span class="mc-pct">({pct_calificados:.1f}%)</span>
-                </div>
-            </div>
-            <div class="mc-split-box mc-box-desc">
-                <div class="mc-label">Fase 3B</div>
-                <div class="mc-name">Descalificados</div>
-                <div style="margin-top: 10px;">
-                    <span class="mc-value">{descalificados}</span>
-                    <span class="mc-pct">({pct_descalificados:.1f}%)</span>
-                </div>
-            </div>
-        </div>
-        
-        <div style="text-align: right; margin: -5px 15% 10px 0; color: #C7AB72; font-size: 20px;">↓</div>
-        
-        <div class="mc-sub-box">
-            <div class="mc-label" style="color: #6b6b69;">Detalle Descalificados</div>
-            <div class="mc-name">Redirección a Distribuidor</div>
-            <div style="margin-top: 5px;">
-                <span class="mc-value" style="font-size: 26px;">{redirigidos}</span>
-                <span class="mc-pct" style="color: #1D1D1B; font-weight: 500;">({pct_redirigidos:.1f}%)</span>
-            </div>
-        </div>
-    </div>
-    """)
+    funnel_html = f"""
+<div class="mc-funnel-container">
+<div class="mc-title">Embudo de Conversión ManyChat</div>
+<div class="mc-subtitle">Mes seleccionado: {sel_mes.capitalize()}</div>
+<div class="mc-stage mc-stage-1">
+<div><div class="mc-label">Fase 1</div><div class="mc-name">Chats Totales</div></div>
+<div class="mc-value">{total_chats}</div>
+</div>
+<div style="text-align: center; color: #C7AB72; font-size: 20px; margin: -5px 0 10px 0;">↓</div>
+<div class="mc-stage mc-stage-2">
+<div><div class="mc-label">Fase 2</div><div class="mc-name">Leads Generados</div></div>
+<div class="mc-value">{total_leads} <span class="mc-pct">({pct_leads_from_chats:.1f}%)</span></div>
+</div>
+<div style="display: flex; justify-content: center; gap: 40%; margin: -5px 0 10px 0; color: #C7AB72; font-size: 20px;">
+<div>↙</div>
+<div>↘</div>
+</div>
+<div class="mc-split-container">
+<div class="mc-split-box mc-box-cal">
+<div class="mc-label">Fase 3A</div>
+<div class="mc-name">Calificados</div>
+<div style="margin-top: 10px;">
+<span class="mc-value">{calificados}</span>
+<span class="mc-pct">({pct_calificados:.1f}%)</span>
+</div>
+</div>
+<div class="mc-split-box mc-box-desc">
+<div class="mc-label">Fase 3B</div>
+<div class="mc-name">Descalificados</div>
+<div style="margin-top: 10px;">
+<span class="mc-value">{descalificados}</span>
+<span class="mc-pct">({pct_descalificados:.1f}%)</span>
+</div>
+</div>
+</div>
+<div style="text-align: right; margin: -5px 15% 10px 0; color: #C7AB72; font-size: 20px;">↓</div>
+<div class="mc-sub-box">
+<div class="mc-label" style="color: #6b6b69;">Detalle Descalificados</div>
+<div class="mc-name">Redirección a Distribuidor</div>
+<div style="margin-top: 5px;">
+<span class="mc-value" style="font-size: 26px;">{redirigidos}</span>
+<span class="mc-pct" style="color: #1D1D1B; font-weight: 500;">({pct_redirigidos:.1f}%)</span>
+</div>
+</div>
+</div>
+"""
+
     
     st.markdown(funnel_html, unsafe_allow_html=True)
     
