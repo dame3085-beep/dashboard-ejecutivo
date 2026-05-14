@@ -142,9 +142,15 @@ def load_data():
         except:
             df_kpi = pd.DataFrame(columns=['fecha de contacto', 'Hora', 'motivo de contacto', 'número de contacto', 'Conteste/No conteste', 'nombre'])
             
-    return df_emp, df_neg, df_fid, df_roi, df_kpi
+    # Hoja MANYCHAT
+    try:
+        df_manychat = pd.read_excel(xls, sheet_name="MANYCHAT")
+    except:
+        df_manychat = pd.DataFrame()
+            
+    return df_emp, df_neg, df_fid, df_roi, df_kpi, df_manychat
 
-df_empresas_raw, df_negocios_raw, df_fid_raw, df_roi_raw, df_kpi_raw = load_data()
+df_empresas_raw, df_negocios_raw, df_fid_raw, df_roi_raw, df_kpi_raw, df_manychat_raw = load_data()
 
 # --- Procesando EMPRESAS ---
 df_empresas = df_empresas_raw.copy()
@@ -702,155 +708,155 @@ def render_gestion_contactos():
 def render_manychat_stats():
     st.title("🤖 Métricas ManyChat")
     
+    df_mc = df_manychat_raw.copy()
+    if df_mc.empty:
+        st.warning("No se encontraron datos en la hoja 'MANYCHAT'.")
+        return
+        
+    if len(df_mc.columns) >= 10:
+        col_etapa = df_mc.columns[6]
+        col_mes = df_mc.columns[8]
+        col_motivo = df_mc.columns[9]
+    else:
+        st.error("La hoja 'MANYCHAT' no tiene suficientes columnas (requiere al menos 10 columnas, A-J).")
+        return
+        
+    df_mc[col_etapa] = df_mc[col_etapa].fillna('').astype(str).str.strip().str.title()
+    df_mc[col_mes] = df_mc[col_mes].fillna('').astype(str).str.strip().str.lower()
+    df_mc[col_motivo] = df_mc[col_motivo].fillna('').astype(str).str.strip()
+    
+    st.markdown("### 🔍 Filtros")
+    meses_disp = sorted([m for m in df_mc[col_mes].unique() if m != ''])
+    
+    sel_mes = st.selectbox("📅 Mes", ['Todos'] + meses_disp)
+    
+    if sel_mes != 'Todos':
+        df_filtered = df_mc[df_mc[col_mes] == sel_mes]
+    else:
+        df_filtered = df_mc
+        
+    total_leads = len(df_filtered)
+    
+    # Chats totales basales por mes
+    base_chats_marzo = 108
+    base_chats_abril = 124
+    
+    if sel_mes == 'marzo':
+        total_chats = base_chats_marzo + total_leads
+    elif sel_mes == 'abril':
+        total_chats = base_chats_abril + total_leads
+    elif sel_mes == 'Todos':
+        marzo_leads = len(df_mc[df_mc[col_mes] == 'marzo'])
+        abril_leads = len(df_mc[df_mc[col_mes] == 'abril'])
+        total_chats = (base_chats_marzo + marzo_leads) + (base_chats_abril + abril_leads) + len(df_mc[~df_mc[col_mes].isin(['marzo', 'abril'])])
+    else:
+        total_chats = total_leads
+        
+    # Metricas Embudo
+    calificados = len(df_filtered[df_filtered[col_etapa] == 'Calificado'])
+    descalificados = len(df_filtered[df_filtered[col_etapa] == 'Descalificado'])
+    
+    pct_calificados = (calificados / total_leads * 100) if total_leads > 0 else 0
+    pct_descalificados = (descalificados / total_leads * 100) if total_leads > 0 else 0
+    
+    descalificados_df = df_filtered[df_filtered[col_etapa] == 'Descalificado']
+    redirigidos = len(descalificados_df[descalificados_df[col_motivo].str.lower().str.contains('distribuidor')])
+    pct_redirigidos = (redirigidos / descalificados * 100) if descalificados > 0 else 0
+    
     st.markdown("""
-    <div style="background-color: #1D1D1B; color: white; padding: 25px; border-radius: 12px; margin-bottom: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-        <h3 style="color: #C7AB72; margin-top: 0; font-size: 24px;">Resumen Ejecutivo</h3>
-        <p style="font-size: 15px; line-height: 1.6; color: #f0f0f0;">El flujo muestra un volumen alto de interacción inicial, con una base principal en español. El punto más fuerte del embudo es la pregunta de interés principal, con una tasa de clic aproximada de <strong style="color:#589642;">97.2%</strong> sobre <strong>17,620 mensajes enviados</strong>. La mayor intención declarada es <strong>Cotizar Producto</strong>, con aproximadamente <strong>7,048 interacciones estimadas</strong>.</p>
-        <p style="font-size: 15px; line-height: 1.6; color: #f0f0f0;">En la segmentación comercial, predominan los usuarios que se identifican como <strong>Marca</strong>, con un CTR de <strong style="color:#589642;">83%</strong>, frente a Distribuidor con 18%. En sectores, los más relevantes son Restaurantes/Food Service y Moda/Retail. En productos, el mayor interés está en <strong>Bolsas</strong>, seguido por Cajas Plegadizas.</p>
-    </div>
+    <style>
+    .mc-funnel-container {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #FFFFFF;
+        padding: 40px;
+        border-radius: 12px;
+        color: #1D1D1B;
+        margin-bottom: 30px;
+        border: 1px solid #e8e4dc;
+        box-shadow: 0 2px 8px rgba(29,29,27,0.07);
+    }
+    .mc-title { color: #1D1D1B; font-size: 28px; font-weight: bold; margin-bottom: 5px; text-align: center; }
+    .mc-subtitle { color: #6b6b69; font-size: 14px; margin-bottom: 30px; text-align: center; }
+    
+    .mc-stage { border-radius: 12px; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .mc-stage-1 { background-color: #1D1D1B; color: white; }
+    .mc-stage-2 { background-color: #3d3d3a; color: white; margin-left: 5%; margin-right: 5%; }
+    
+    .mc-split-container { display: flex; gap: 20px; margin-left: 10%; margin-right: 10%; margin-bottom: 15px; }
+    .mc-split-box { flex: 1; border-radius: 12px; padding: 20px; color: white; position: relative; }
+    .mc-box-cal { background-color: #589642; }
+    .mc-box-desc { background-color: #7a5c2e; }
+    
+    .mc-sub-box { background-color: #C7AB72; color: #1D1D1B; border-radius: 12px; padding: 15px 20px; margin-left: 55%; margin-right: 10%; margin-top: -5px; }
+    
+    .mc-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.8; margin-bottom: 5px; }
+    .mc-name { font-size: 18px; font-weight: bold; }
+    .mc-value { font-size: 32px; font-weight: bold; }
+    .mc-pct { font-size: 16px; font-weight: normal; opacity: 0.9; margin-left: 8px; }
+    </style>
     """, unsafe_allow_html=True)
     
-    # KPIs Top
-    st.markdown("<h3 style='color: #1D1D1B; margin-bottom: 20px;'>🏆 Indicadores Principales Gerenciales</h3>", unsafe_allow_html=True)
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    with kpi1:
-        st.markdown(f"""
-        <div class="kpi-card kpi-card-black" style="padding: 25px;">
-            <div class="kpi-label kpi-label-muted" style="color: #C7AB72;">Mensajes Iniciales</div>
-            <div class="kpi-value" style="font-size: 42px;">19,495</div>
-            <div class="kpi-sub">Enviados</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with kpi2:
-        st.markdown(f"""
-        <div class="kpi-card kpi-card-green" style="padding: 25px;">
-            <div class="kpi-label kpi-label-muted">Tasa de Entrega</div>
-            <div class="kpi-value" style="font-size: 42px;">99.8%</div>
-            <div class="kpi-sub">Inicial</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with kpi3:
-        st.markdown(f"""
-        <div class="kpi-card kpi-card-white" style="padding: 25px;">
-            <div class="kpi-label" style="color: #6b6b69;">Clic Interés Princ.</div>
-            <div class="kpi-value" style="color: #589642; font-size: 42px;">97.2%</div>
-            <div class="kpi-sub" style="color: #6b6b69;">17,620 usuarios</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with kpi4:
-        st.markdown(f"""
-        <div class="kpi-card kpi-card-white" style="border-top: 4px solid #C7AB72; padding: 25px;">
-            <div class="kpi-label" style="color: #1D1D1B;">Principal Intención</div>
-            <div class="kpi-value" style="color: #1D1D1B; font-size: 32px; padding-top: 10px;">Cotizar</div>
-            <div class="kpi-sub" style="color: #6b6b69;">Producto</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("---")
+    pct_leads_from_chats = (total_leads / total_chats * 100) if total_chats > 0 else 0
     
-    # Tablas de datos estáticos
-    col_chart1, col_chart2 = st.columns(2, gap="large")
-    
-    with col_chart1:
-        st.markdown("<h4 style='color: #1D1D1B;'>🎯 Interés Principal</h4>", unsafe_allow_html=True)
-        df_interes = pd.DataFrame({
-            'Opción': ['Cotizar Producto', 'Ser Proveedor', 'Vacantes'],
-            'Clics Estimados': [7048, 529, 705]
-        }).set_index('Opción')
-        st.bar_chart(df_interes, color="#C7AB72")
+    funnel_html = f"""
+    <div class="mc-funnel-container">
+        <div class="mc-title">Embudo de Conversión ManyChat</div>
+        <div class="mc-subtitle">Mes seleccionado: {sel_mes.capitalize()}</div>
         
-        st.markdown("<h4 style='color: #1D1D1B; margin-top: 30px;'>💼 Perfil Comercial</h4>", unsafe_allow_html=True)
-        df_perfil = pd.DataFrame({
-            'Perfil': ['Soy una Marca', 'Soy un Distribuidor'],
-            'Clics Estimados': [5788, 1255]
-        }).set_index('Perfil')
-        st.bar_chart(df_perfil, color="#589642")
+        <div class="mc-stage mc-stage-1">
+            <div><div class="mc-label">Fase 1</div><div class="mc-name">Chats Totales</div></div>
+            <div class="mc-value">{total_chats}</div>
+        </div>
         
-        st.markdown("<h4 style='color: #1D1D1B; margin-top: 30px;'>📦 Productos de Mayor Interés</h4>", unsafe_allow_html=True)
-        df_productos = pd.DataFrame({
-            'Producto': ['Bolsas', 'Cajas Plegadizas', 'Otros productos', 'Papel antigrasa', 'Papel de seda', 'Rollos POS', 'Impresos a demanda', 'Doc. de seguridad'],
-            'Clics Estimados': [3773, 1213, 404, 269, 67, 67, 67, 67]
-        }).set_index('Producto')
-        st.bar_chart(df_productos, color="#1D1D1B")
+        <div style="text-align: center; color: #C7AB72; font-size: 20px; margin: -5px 0 10px 0;">↓</div>
         
-    with col_chart2:
-        st.markdown("<h4 style='color: #1D1D1B;'>🌍 Idioma</h4>", unsafe_allow_html=True)
-        df_idioma = pd.DataFrame({
-            'Idioma': ['Español', 'English'],
-            'Clics Estimados': [7490, 168]
-        }).set_index('Idioma')
-        st.bar_chart(df_idioma, color="#589642")
+        <div class="mc-stage mc-stage-2">
+            <div><div class="mc-label">Fase 2</div><div class="mc-name">Leads Generados</div></div>
+            <div class="mc-value">{total_leads} <span class="mc-pct">({pct_leads_from_chats:.1f}%)</span></div>
+        </div>
         
-        st.markdown("<h4 style='color: #1D1D1B; margin-top: 30px;'>🏭 Sector de la Marca</h4>", unsafe_allow_html=True)
-        df_sector = pd.DataFrame({
-            'Sector': ['Restaurantes / Food Service', 'Moda / Retail', 'Industrias / Otro'],
-            'Clics Estimados': [2246, 2131, 1670]
-        }).set_index('Sector')
-        st.bar_chart(df_sector, color="#C7AB72")
+        <div style="display: flex; justify-content: center; gap: 40%; margin: -5px 0 10px 0; color: #C7AB72; font-size: 20px;">
+            <div>↙</div>
+            <div>↘</div>
+        </div>
         
-        st.markdown("<h4 style='color: #1D1D1B; margin-top: 30px;'>📊 Rangos de Cantidad</h4>", unsafe_allow_html=True)
-        df_cantidades = pd.DataFrame({
-            'Rango': ['Menos de 600', '600 - 1,000', '1,000 - 5,000', '5,000 - 10,000', '10,000 - 20,000', '20,000 - 50,000', '50,000 - 100,000', 'Más de 100,000'],
-            'Clics Estimados': [184, 121, 68, 29, 15, 15, 10, 15]
-        }).set_index('Rango')
-        st.bar_chart(df_cantidades, color="#589642")
+        <div class="mc-split-container">
+            <div class="mc-split-box mc-box-cal">
+                <div class="mc-label">Fase 3A</div>
+                <div class="mc-name">Calificados</div>
+                <div style="margin-top: 10px;">
+                    <span class="mc-value">{calificados}</span>
+                    <span class="mc-pct">({pct_calificados:.1f}%)</span>
+                </div>
+            </div>
+            <div class="mc-split-box mc-box-desc">
+                <div class="mc-label">Fase 3B</div>
+                <div class="mc-name">Descalificados</div>
+                <div style="margin-top: 10px;">
+                    <span class="mc-value">{descalificados}</span>
+                    <span class="mc-pct">({pct_descalificados:.1f}%)</span>
+                </div>
+            </div>
+        </div>
         
-    st.markdown("---")
-    st.markdown("<h3 style='color: #1D1D1B; margin-bottom: 20px;'>📋 Tablas de Detalles</h3>", unsafe_allow_html=True)
-    
-    tab1, tab2, tab3 = st.tabs(["Indicadores del Flujo", "Catálogos / Secundarios", "Flujo Inglés"])
-    
-    with tab1:
-        df_flujo = pd.DataFrame([
-            ["Mensaje inicial / bienvenida", "19,495", "99.8%", "59.9%", "Buen alcance inicial, interacción media-alta"],
-            ["Selección de idioma", "8,416", "99.9%", "90.6%", "Muy buena respuesta al selector"],
-            ["Pregunta de interés", "17,620", "100%", "97.2%", "Punto más fuerte del embudo"],
-            ["Perfil de negocio", "6,973", "100%", "97.4%", "Alta segmentación efectiva"],
-            ["Sector de la marca", "5,759", "100%", "98.6%", "Excelente tasa de respuesta"],
-            ["Selección de productos", "6,737", "100%", "80.2%", "Buena interacción"],
-            ["Tipo de producto", "823", "100%", "88.3%", "Buena intención de cotización"],
-            ["Rango de cantidades", "484", "100%", "93.0%", "Muy buena respuesta en etapa avanzada"]
-        ], columns=["Etapa", "Enviados", "Entregado", "Clic", "Lectura"])
-        st.dataframe(df_flujo, use_container_width=True, hide_index=True)
+        <div style="text-align: right; margin: -5px 15% 10px 0; color: #C7AB72; font-size: 20px;">↓</div>
         
-    with tab2:
-        col_t1, col_t2 = st.columns(2, gap="large")
-        with col_t1:
-            st.markdown("<strong style='color:#C7AB72;'>Catálogos Enviados</strong>", unsafe_allow_html=True)
-            df_cats = pd.DataFrame([
-                ["Food Service", "2,235", "100%", "0%"],
-                ["Moda / Retail", "2,137", "100%", "0%"],
-                ["Industria", "1,650", "100%", "0%"],
-                ["Distribuidores", "1,255", "100%", "0%"]
-            ], columns=["Material", "Enviados", "Entregado", "Clic"])
-            st.dataframe(df_cats, use_container_width=True, hide_index=True)
-        with col_t2:
-            st.markdown("<strong style='color:#589642;'>Flujos Secundarios</strong>", unsafe_allow_html=True)
-            df_sec = pd.DataFrame([
-                ["Proveedores (portafolio)", "905", "99.9%", "0%"],
-                ["Vacantes (CV)", "972", "99.9%", "0%"],
-                ["Confirmación / Referencia", "1,574", "100%", "0%"]
-            ], columns=["Ruta", "Enviados", "Entregado", "Clic"])
-            st.dataframe(df_sec, use_container_width=True, hide_index=True)
-            
-    with tab3:
-        df_eng = pd.DataFrame([
-            ["Bienvenida en inglés", "152", "100%", "18.4%"],
-            ["Perfil: Brand / Distributor", "38", "100%", "97.4%"],
-            ["Sector: Retail / Food Service / Others", "18", "100%", "83.3%"],
-            ["Preferencia de producto", "34", "100%", "100%"],
-            ["Rango de cantidad", "34", "100%", "97.1%"],
-            ["Mensaje final referencia", "33", "100%", "0%"]
-        ], columns=["Etapa Inglés", "Enviados", "Entregado", "Clic"])
-        st.dataframe(df_eng, use_container_width=True, hide_index=True)
-
-    st.markdown("---")
-    st.markdown("""
-    <div style="background-color: #f7f9fc; padding: 25px; border-left: 6px solid #C7AB72; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-top: 30px;">
-        <h4 style="color: #1D1D1B; margin-top: 0; font-size: 20px;">💡 Conclusión Principal</h4>
-        <p style="color: #6b6b69; font-size: 16px; line-height: 1.6;">ManyChat está generando alto volumen de leads comerciales, principalmente en español, con fuerte interés en cotización de bolsas y productos personalizados. El reto está en filtrar mejor por volumen de compra, porque la mayoría de solicitudes visibles se concentra en cantidades bajas.</p>
+        <div class="mc-sub-box">
+            <div class="mc-label" style="color: #6b6b69;">Detalle Descalificados</div>
+            <div class="mc-name">Redirección a Distribuidor</div>
+            <div style="margin-top: 5px;">
+                <span class="mc-value" style="font-size: 26px;">{redirigidos}</span>
+                <span class="mc-pct" style="color: #1D1D1B; font-weight: 500;">({pct_redirigidos:.1f}%)</span>
+            </div>
+        </div>
     </div>
-    """, unsafe_allow_html=True)
+    """
+    
+    st.markdown(funnel_html, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    st.subheader("📋 Registro Completo (Filtrado)")
+    st.dataframe(df_filtered, use_container_width=True, hide_index=True)
 
 def main():
     with st.sidebar:
@@ -861,7 +867,7 @@ def main():
         </div>
         """, unsafe_allow_html=True)
         
-        page = st.radio("Navegación", ["Dashboard Ejecutivo", "GESTIÓN DE CONTACTOS", "Métricas ManyChat"])
+        page = st.radio("Navegación", ["Dashboard Ejecutivo", "GESTIÓN DE CONTACTOS", "Manychat"])
         
     if page == "Dashboard Ejecutivo":
         render_dashboard_ejecutivo()
