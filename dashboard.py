@@ -798,7 +798,7 @@ def render_manychat_stats():
     
     pct_leads_from_chats = (total_leads / total_chats * 100) if total_chats > 0 else 0
     
-    funnel_html = f"""
+    funnel_html = textwrap.dedent(f"""
     <div class="mc-funnel-container">
         <div class="mc-title">Embudo de Conversión ManyChat</div>
         <div class="mc-subtitle">Mes seleccionado: {sel_mes.capitalize()}</div>
@@ -850,7 +850,7 @@ def render_manychat_stats():
             </div>
         </div>
     </div>
-    """
+    """)
     
     st.markdown(funnel_html, unsafe_allow_html=True)
     
