@@ -150,25 +150,25 @@ def load_data():
     
     # Hoja LEADS (para KPIs Mercadeo) - intentar varios nombres
     df_leads = pd.DataFrame()
-    for nombre in ["LEADS", "Leads", "leads", "Leads HubSpot", "Hoja 5"]:
+    for nombre in ["LEADS", "Leads", "leads"]:
         try:
             df_leads = pd.read_excel(xls, sheet_name=nombre)
             break
         except:
             continue
     
-    # Hoja cotizaciones (para KPIs Mercadeo)
+    # Hoja COTIZACIONES (mayúsculas como aparece en el sheet)
     df_cotizaciones = pd.DataFrame()
-    for nombre in ["cotizaciones", "Cotizaciones", "COTIZACIONES", "cotización", "Cotizacion"]:
+    for nombre in ["COTIZACIONES", "Cotizaciones", "cotizaciones", "COTIZACIÓN", "Cotización", "cotización"]:
         try:
             df_cotizaciones = pd.read_excel(xls, sheet_name=nombre)
             break
         except:
             continue
     
-    # Hoja facturacion (para KPIs Mercadeo)
+    # Hoja FACTURACIÓN (mayúsculas con tilde - la última hoja)
     df_facturacion = pd.DataFrame()
-    for nombre in ["facturacion", "Facturacion", "FACTURACION", "facturación", "Facturación", "Ventas", "ventas"]:
+    for nombre in ["FACTURACIÓN", "FACTURACION", "Facturación", "Facturacion", "facturación", "facturacion"]:
         try:
             df_facturacion = pd.read_excel(xls, sheet_name=nombre)
             break
@@ -1020,34 +1020,35 @@ def render_kpis_mercadeo():
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # === DEBUG: Verificar datos cargados ===
-    with st.expander("🔧 Debug - Verificar datos cargados", expanded=False):
-        st.write("**Hojas disponibles en el archivo:**")
-        st.write(sheet_names_available)
-        st.write("---")
-        st.write("**Estado de hojas KPI Mercadeo:**")
-        col_d1, col_d2, col_d3 = st.columns(3)
-        with col_d1:
-            st.write(f"LEADS: {'✅' if not df_leads_raw.empty else '❌'} {len(df_leads_raw)} filas, {len(df_leads_raw.columns)} cols")
-            if not df_leads_raw.empty:
-                st.write("Columnas:", list(df_leads_raw.columns))
-        with col_d2:
-            st.write(f"cotizaciones: {'✅' if not df_cotizaciones_raw.empty else '❌'} {len(df_cotizaciones_raw)} filas, {len(df_cotizaciones_raw.columns)} cols")
-            if not df_cotizaciones_raw.empty:
-                st.write("Columnas:", list(df_cotizaciones_raw.columns))
-        with col_d3:
-            st.write(f"facturacion: {'✅' if not df_facturacion_raw.empty else '❌'} {len(df_facturacion_raw)} filas, {len(df_facturacion_raw.columns)} cols")
-            if not df_facturacion_raw.empty:
-                st.write("Columnas:", list(df_facturacion_raw.columns))
-        
-        if not df_leads_raw.empty:
-            st.write("---")
-            st.write("**Preview LEADS (primeras 5 filas):**")
-            st.dataframe(df_leads_raw.head(), use_container_width=True)
-        
-        st.info("Si los indicadores muestran 0, verifique que los nombres de hojas coincidan exactamente: LEADS, cotizaciones, facturacion")
+    # === DIAGNÓSTICO AUTOMÁTICO ===
+    hay_problema = df_leads_raw.empty and df_cotizaciones_raw.empty and df_facturacion_raw.empty
     
-    # === DETECCIÓN AUTOMÁTICA DE COLUMNAS EN LEADS ===
+    if hay_problema:
+        st.error("⚠️ **No se encontraron datos en las hojas LEADS, cotizaciones o facturacion**")
+        st.write("**Hojas disponibles en el archivo Google Sheets:**")
+        st.code(sheet_names_available)
+        st.write("**Buscando hojas con nombres similares...**")
+        # Intentar encontrar hojas similares
+        similares_leads = [s for s in sheet_names_available if 'lead' in s.lower() or 'hubspot' in s.lower()]
+        similares_cot = [s for s in sheet_names_available if 'cot' in s.lower() or 'presupuesto' in s.lower()]
+        similares_fac = [s for s in sheet_names_available if 'fact' in s.lower() or 'venta' in s.lower() or 'ingreso' in s.lower()]
+        if similares_leads:
+            st.write(f"Posibles hojas de LEADS: {similares_leads}")
+        if similares_cot:
+            st.write(f"Posibles hojas de cotizaciones: {similares_cot}")
+        if similares_fac:
+            st.write(f"Posibles hojas de facturacion: {similares_fac}")
+        st.warning("Revisa los nombres de hojas y recarga")
+    else:
+        # Mostrar resumen en verde si todo OK
+        with st.expander("✅ Diagnóstico de datos", expanded=False):
+            st.write(f"**LEADS:** {len(df_leads_raw)} filas, columnas: {list(df_leads_raw.columns) if not df_leads_raw.empty else 'N/A'}")
+            st.write(f"**cotizaciones:** {len(df_cotizaciones_raw)} filas, columnas: {list(df_cotizaciones_raw.columns) if not df_cotizaciones_raw.empty else 'N/A'}")
+            st.write(f"**facturacion:** {len(df_facturacion_raw)} filas, columnas: {list(df_facturacion_raw.columns) if not df_facturacion_raw.empty else 'N/A'}")
+    
+    # === DETECCIÓN DE COLUMNAS EN LEADS (A-N según especificación) ===
+    # Columna L (índice 11) = Etiquetas de lead = MES
+    # Columna H (índice 7) = Etapa del lead = CALIFICACIÓN
     df_leads = df_leads_raw.copy()
     leads_marzo = leads_abril = 0
     pct_marzo = pct_abril = 0
@@ -1055,25 +1056,11 @@ def render_kpis_mercadeo():
     col_calif = None
     
     if not df_leads.empty:
-        # Buscar columna de mes (nombres comunes)
-        for col in df_leads.columns:
-            col_lower = str(col).lower()
-            if any(x in col_lower for x in ['mes', 'month', 'periodo', 'fecha']):
-                col_mes_leads = col
-                break
-        
-        # Buscar columna de calificación
-        for col in df_leads.columns:
-            col_lower = str(col).lower()
-            if any(x in col_lower for x in ['calif', 'oportunidad', 'mql', 'sql', 'estado']):
-                col_calif = col
-                break
-        
-        # Si no encontramos columnas específicas, usar índices como fallback
-        if col_mes_leads is None and len(df_leads.columns) >= 12:
-            col_mes_leads = df_leads.columns[11]  # Columna L
-        if col_calif is None and len(df_leads.columns) >= 8:
-            col_calif = df_leads.columns[7]  # Columna H
+        # Usar índices exactos: L=11 (mes), H=7 (calificación)
+        if len(df_leads.columns) >= 12:
+            col_mes_leads = df_leads.columns[11]  # Columna L - Etiquetas de lead
+        if len(df_leads.columns) >= 8:
+            col_calif = df_leads.columns[7]  # Columna H - Etapa del lead
         
         # Calcular leads por mes
         if col_mes_leads:
@@ -1206,44 +1193,24 @@ def render_kpis_mercadeo():
             df_abr_calif = df_abr_all[df_abr_all[col_calif].isin(['si', 'sí', 'yes', 'true', '1'])] if 'col_calif' in locals() and not df_abr_all.empty else pd.DataFrame()
             show_detalle_conversion("abril", calif_abril, total_abril, df_abr_calif, df_abr_all)
     
-    # === INDICADOR 3: NEGOCIOS COTIZADOS ===
+    # === INDICADOR 3: NEGOCIOS COTIZADOS (A-H según especificación) ===
+    # Columna F (índice 5) = Valor
+    # Columna G (índice 6) = Fecha de creación (contiene mes)
     df_cot = df_cotizaciones_raw.copy()
     cot_marzo = cot_abril = 0
-    col_valor_cot = None
-    col_mes_cot = None
     
-    if not df_cot.empty:
-        # Buscar columna de valor (montos)
-        for col in df_cot.columns:
-            col_lower = str(col).lower()
-            if any(x in col_lower for x in ['valor', 'monto', 'total', 'precio', 'cantidad', 'importe', 'venta']):
-                col_valor_cot = col
-                break
+    if not df_cot.empty and len(df_cot.columns) >= 7:
+        col_valor_cot = df_cot.columns[5]  # Columna F - Valor
+        col_fecha_cot = df_cot.columns[6]  # Columna G - Fecha de creación
         
-        # Buscar columna de mes
-        for col in df_cot.columns:
-            col_lower = str(col).lower()
-            if any(x in col_lower for x in ['mes', 'month', 'periodo', 'fecha']):
-                col_mes_cot = col
-                break
+        df_cot[col_valor_cot] = pd.to_numeric(df_cot[col_valor_cot], errors='coerce').fillna(0)
         
-        # Fallback a posición F (índice 5) si no encontramos por nombre
-        if col_valor_cot is None and len(df_cot.columns) >= 6:
-            col_valor_cot = df_cot.columns[5]
+        # Extraer mes de la fecha
+        df_cot[col_fecha_cot] = pd.to_datetime(df_cot[col_fecha_cot], errors='coerce')
+        df_cot['mes_nombre'] = df_cot[col_fecha_cot].dt.strftime('%B').str.lower().str.replace('march', 'marzo').str.replace('april', 'abril')
         
-        if col_valor_cot:
-            df_cot[col_valor_cot] = pd.to_numeric(df_cot[col_valor_cot], errors='coerce').fillna(0)
-            
-            # Si hay columna de mes, agrupar por mes
-            if col_mes_cot:
-                df_cot[col_mes_cot] = df_cot[col_mes_cot].fillna('').astype(str).str.strip().str.lower()
-                cot_marzo = df_cot[df_cot[col_mes_cot] == 'marzo'][col_valor_cot].sum()
-                cot_abril = df_cot[df_cot[col_mes_cot] == 'abril'][col_valor_cot].sum()
-            else:
-                # Si no hay mes, usamos todo para ambos meses (o dividir según lógica)
-                cot_total = df_cot[col_valor_cot].sum()
-                cot_marzo = cot_total * 0.6
-                cot_abril = cot_total * 0.4
+        cot_marzo = df_cot[df_cot['mes_nombre'] == 'marzo'][col_valor_cot].sum()
+        cot_abril = df_cot[df_cot['mes_nombre'] == 'abril'][col_valor_cot].sum()
     
     def format_currency(val):
         if val >= 1_000_000_000:
@@ -1295,11 +1262,20 @@ def render_kpis_mercadeo():
     c1, c2, c_spacer = st.columns([1, 1, 3])
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_cot_mar", use_container_width=True):
-            # Para cotizaciones, mostramos todos los datos (temporal hasta tener mes específico)
-            show_detalle_cotizaciones("marzo", cot_marzo, df_cotizaciones_raw)
+            # Filtrar cotizaciones de marzo por fecha
+            if not df_cot.empty and 'mes_nombre' in df_cot.columns:
+                df_cot_mar = df_cot[df_cot['mes_nombre'] == 'marzo']
+            else:
+                df_cot_mar = df_cotizaciones_raw
+            show_detalle_cotizaciones("marzo", cot_marzo, df_cot_mar)
     with c2:
         if st.button("🔍 Ver detalle Abril", key="btn_cot_abr", use_container_width=True):
-            show_detalle_cotizaciones("abril", cot_abril, df_cotizaciones_raw)
+            # Filtrar cotizaciones de abril por fecha
+            if not df_cot.empty and 'mes_nombre' in df_cot.columns:
+                df_cot_abr = df_cot[df_cot['mes_nombre'] == 'abril']
+            else:
+                df_cot_abr = df_cotizaciones_raw
+            show_detalle_cotizaciones("abril", cot_abril, df_cot_abr)
     
     # === INDICADOR 4: NEGOCIOS FACTURADOS ===
     df_fac = df_facturacion_raw.copy()
