@@ -1121,6 +1121,8 @@ def render_kpis_mercadeo():
             show_detalle_leads_mes("abril", df_abr_fil)
     
     # === INDICADOR 2: TASA CONVERSIÓN ===
+    # Columna H (índice 7) = Etapa del lead
+    # Un lead es "calificado" si contiene la palabra "calificado" o "calificada"
     tasa_marzo = tasa_abril = 0
     calif_marzo = calif_abril = 0
     total_marzo = total_abril = 0
@@ -1129,16 +1131,20 @@ def render_kpis_mercadeo():
         # Normalizar columna de calificación
         df_leads[col_calif] = df_leads[col_calif].fillna('').astype(str).str.strip().str.lower()
         
+        # Función para detectar si es calificado
+        def es_calificado(val):
+            return 'calif' in val or 'oportunidad' in val or 'mql' in val or 'sql' in val
+        
         # Marzo
         df_marzo = df_leads[df_leads[col_mes_leads] == 'marzo']
         total_marzo = len(df_marzo)
-        calif_marzo = len(df_marzo[df_marzo[col_calif].isin(['si', 'sí', 'yes', 'true', '1'])])
+        calif_marzo = len(df_marzo[df_marzo[col_calif].apply(es_calificado)])
         tasa_marzo = (calif_marzo / total_marzo * 100) if total_marzo > 0 else 0
         
         # Abril
         df_abril = df_leads[df_leads[col_mes_leads] == 'abril']
         total_abril = len(df_abril)
-        calif_abril = len(df_abril[df_abril[col_calif].isin(['si', 'sí', 'yes', 'true', '1'])])
+        calif_abril = len(df_abril[df_abril[col_calif].apply(es_calificado)])
         tasa_abril = (calif_abril / total_abril * 100) if total_abril > 0 else 0
     
     pct_tasa_marzo = (tasa_marzo / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
@@ -1181,16 +1187,20 @@ def render_kpis_mercadeo():
     """, unsafe_allow_html=True)
     
     # Botones detalle Conversión
+    def es_calificado_check(val):
+        val = str(val).lower()
+        return 'calif' in val or 'oportunidad' in val or 'mql' in val or 'sql' in val
+    
     c1, c2, c_spacer = st.columns([1, 1, 3])
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_conv_mar", use_container_width=True) and not df_leads.empty:
-            df_mar_all = df_leads[df_leads[col_mes_leads] == 'marzo'] if 'col_mes_leads' in locals() else pd.DataFrame()
-            df_mar_calif = df_mar_all[df_mar_all[col_calif].isin(['si', 'sí', 'yes', 'true', '1'])] if 'col_calif' in locals() and not df_mar_all.empty else pd.DataFrame()
+            df_mar_all = df_leads[df_leads[col_mes_leads] == 'marzo'] if col_mes_leads else pd.DataFrame()
+            df_mar_calif = df_mar_all[df_mar_all[col_calif].apply(es_calificado_check)] if col_calif and not df_mar_all.empty else pd.DataFrame()
             show_detalle_conversion("marzo", calif_marzo, total_marzo, df_mar_calif, df_mar_all)
     with c2:
         if st.button("🔍 Ver detalle Abril", key="btn_conv_abr", use_container_width=True) and not df_leads.empty:
-            df_abr_all = df_leads[df_leads[col_mes_leads] == 'abril'] if 'col_mes_leads' in locals() else pd.DataFrame()
-            df_abr_calif = df_abr_all[df_abr_all[col_calif].isin(['si', 'sí', 'yes', 'true', '1'])] if 'col_calif' in locals() and not df_abr_all.empty else pd.DataFrame()
+            df_abr_all = df_leads[df_leads[col_mes_leads] == 'abril'] if col_mes_leads else pd.DataFrame()
+            df_abr_calif = df_abr_all[df_abr_all[col_calif].apply(es_calificado_check)] if col_calif and not df_abr_all.empty else pd.DataFrame()
             show_detalle_conversion("abril", calif_abril, total_abril, df_abr_calif, df_abr_all)
     
     # === INDICADOR 3: NEGOCIOS COTIZADOS (A-H según especificación) ===
