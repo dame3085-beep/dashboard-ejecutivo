@@ -1047,26 +1047,27 @@ def render_kpis_mercadeo():
             st.write(f"**facturacion:** {len(df_facturacion_raw)} filas, columnas: {list(df_facturacion_raw.columns) if not df_facturacion_raw.empty else 'N/A'}")
     
     # === DETECCIÓN DE COLUMNAS EN LEADS (A-N según especificación) ===
-    # Columna L (índice 11) = Etiquetas de lead = MES
+    # Columna L (índice 11) = Fecha de asignación al propietario (contiene fecha)
     # Columna H (índice 7) = Etapa del lead = CALIFICACIÓN
     df_leads = df_leads_raw.copy()
     leads_marzo = leads_abril = 0
     pct_marzo = pct_abril = 0
-    col_mes_leads = None
+    col_fecha_leads = None
     col_calif = None
     
     if not df_leads.empty:
-        # Usar índices exactos: L=11 (mes), H=7 (calificación)
+        # Usar índices exactos: L=11 (fecha), H=7 (calificación)
         if len(df_leads.columns) >= 12:
-            col_mes_leads = df_leads.columns[11]  # Columna L - Etiquetas de lead
+            col_fecha_leads = df_leads.columns[11]  # Columna L - Fecha de asignación
         if len(df_leads.columns) >= 8:
             col_calif = df_leads.columns[7]  # Columna H - Etapa del lead
         
-        # Calcular leads por mes
-        if col_mes_leads:
-            df_leads[col_mes_leads] = df_leads[col_mes_leads].fillna('').astype(str).str.strip().str.lower()
-            leads_marzo = len(df_leads[df_leads[col_mes_leads] == 'marzo'])
-            leads_abril = len(df_leads[df_leads[col_mes_leads] == 'abril'])
+        # Calcular leads por mes extrayendo de la fecha
+        if col_fecha_leads:
+            # Convertir a fecha y extraer mes
+            df_leads['mes_num'] = pd.to_datetime(df_leads[col_fecha_leads], errors='coerce', dayfirst=True).dt.month
+            leads_marzo = len(df_leads[df_leads['mes_num'] == 3])
+            leads_abril = len(df_leads[df_leads['mes_num'] == 4])
             pct_marzo = (leads_marzo / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
             pct_abril = (leads_abril / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
     
@@ -1113,11 +1114,11 @@ def render_kpis_mercadeo():
     c1, c2, c_spacer = st.columns([1, 1, 3])
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_leads_mar", use_container_width=True) and not df_leads.empty:
-            df_mar_fil = df_leads[df_leads[col_mes_leads] == 'marzo'] if 'col_mes_leads' in locals() else pd.DataFrame()
+            df_mar_fil = df_leads[df_leads['mes_num'] == 3] if 'mes_num' in df_leads.columns else pd.DataFrame()
             show_detalle_leads_mes("marzo", df_mar_fil)
     with c2:
         if st.button("🔍 Ver detalle Abril", key="btn_leads_abr", use_container_width=True) and not df_leads.empty:
-            df_abr_fil = df_leads[df_leads[col_mes_leads] == 'abril'] if 'col_mes_leads' in locals() else pd.DataFrame()
+            df_abr_fil = df_leads[df_leads['mes_num'] == 4] if 'mes_num' in df_leads.columns else pd.DataFrame()
             show_detalle_leads_mes("abril", df_abr_fil)
     
     # === INDICADOR 2: TASA CONVERSIÓN ===
@@ -1127,7 +1128,7 @@ def render_kpis_mercadeo():
     calif_marzo = calif_abril = 0
     total_marzo = total_abril = 0
     
-    if not df_leads.empty and col_mes_leads and col_calif:
+    if not df_leads.empty and 'mes_num' in df_leads.columns and col_calif:
         # Normalizar columna de calificación
         df_leads[col_calif] = df_leads[col_calif].fillna('').astype(str).str.strip().str.lower()
         
@@ -1135,14 +1136,14 @@ def render_kpis_mercadeo():
         def es_calificado(val):
             return 'calif' in val or 'oportunidad' in val or 'mql' in val or 'sql' in val
         
-        # Marzo
-        df_marzo = df_leads[df_leads[col_mes_leads] == 'marzo']
+        # Marzo (mes_num = 3)
+        df_marzo = df_leads[df_leads['mes_num'] == 3]
         total_marzo = len(df_marzo)
         calif_marzo = len(df_marzo[df_marzo[col_calif].apply(es_calificado)])
         tasa_marzo = (calif_marzo / total_marzo * 100) if total_marzo > 0 else 0
         
-        # Abril
-        df_abril = df_leads[df_leads[col_mes_leads] == 'abril']
+        # Abril (mes_num = 4)
+        df_abril = df_leads[df_leads['mes_num'] == 4]
         total_abril = len(df_abril)
         calif_abril = len(df_abril[df_abril[col_calif].apply(es_calificado)])
         tasa_abril = (calif_abril / total_abril * 100) if total_abril > 0 else 0
@@ -1194,12 +1195,12 @@ def render_kpis_mercadeo():
     c1, c2, c_spacer = st.columns([1, 1, 3])
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_conv_mar", use_container_width=True) and not df_leads.empty:
-            df_mar_all = df_leads[df_leads[col_mes_leads] == 'marzo'] if col_mes_leads else pd.DataFrame()
+            df_mar_all = df_leads[df_leads['mes_num'] == 3] if 'mes_num' in df_leads.columns else pd.DataFrame()
             df_mar_calif = df_mar_all[df_mar_all[col_calif].apply(es_calificado_check)] if col_calif and not df_mar_all.empty else pd.DataFrame()
             show_detalle_conversion("marzo", calif_marzo, total_marzo, df_mar_calif, df_mar_all)
     with c2:
         if st.button("🔍 Ver detalle Abril", key="btn_conv_abr", use_container_width=True) and not df_leads.empty:
-            df_abr_all = df_leads[df_leads[col_mes_leads] == 'abril'] if col_mes_leads else pd.DataFrame()
+            df_abr_all = df_leads[df_leads['mes_num'] == 4] if 'mes_num' in df_leads.columns else pd.DataFrame()
             df_abr_calif = df_abr_all[df_abr_all[col_calif].apply(es_calificado_check)] if col_calif and not df_abr_all.empty else pd.DataFrame()
             show_detalle_conversion("abril", calif_abril, total_abril, df_abr_calif, df_abr_all)
     
