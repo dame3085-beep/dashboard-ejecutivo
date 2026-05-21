@@ -148,27 +148,39 @@ def load_data():
     except:
         df_manychat = pd.DataFrame()
     
-    # Hoja LEADS (para KPIs Mercadeo)
-    try:
-        df_leads = pd.read_excel(xls, sheet_name="LEADS")
-    except:
-        df_leads = pd.DataFrame()
+    # Hoja LEADS (para KPIs Mercadeo) - intentar varios nombres
+    df_leads = pd.DataFrame()
+    for nombre in ["LEADS", "Leads", "leads", "Leads HubSpot", "Hoja 5"]:
+        try:
+            df_leads = pd.read_excel(xls, sheet_name=nombre)
+            break
+        except:
+            continue
     
     # Hoja cotizaciones (para KPIs Mercadeo)
-    try:
-        df_cotizaciones = pd.read_excel(xls, sheet_name="cotizaciones")
-    except:
-        df_cotizaciones = pd.DataFrame()
+    df_cotizaciones = pd.DataFrame()
+    for nombre in ["cotizaciones", "Cotizaciones", "COTIZACIONES", "cotización", "Cotizacion"]:
+        try:
+            df_cotizaciones = pd.read_excel(xls, sheet_name=nombre)
+            break
+        except:
+            continue
     
     # Hoja facturacion (para KPIs Mercadeo)
-    try:
-        df_facturacion = pd.read_excel(xls, sheet_name="facturacion")
-    except:
-        df_facturacion = pd.DataFrame()
+    df_facturacion = pd.DataFrame()
+    for nombre in ["facturacion", "Facturacion", "FACTURACION", "facturación", "Facturación", "Ventas", "ventas"]:
+        try:
+            df_facturacion = pd.read_excel(xls, sheet_name=nombre)
+            break
+        except:
+            continue
+    
+    # Guardar nombres de hojas disponibles para debug
+    sheet_names = xls.sheet_names
             
-    return df_emp, df_neg, df_fid, df_roi, df_kpi, df_manychat, df_leads, df_cotizaciones, df_facturacion
+    return df_emp, df_neg, df_fid, df_roi, df_kpi, df_manychat, df_leads, df_cotizaciones, df_facturacion, sheet_names
 
-df_empresas_raw, df_negocios_raw, df_fid_raw, df_roi_raw, df_kpi_raw, df_manychat_raw, df_leads_raw, df_cotizaciones_raw, df_facturacion_raw = load_data()
+df_empresas_raw, df_negocios_raw, df_fid_raw, df_roi_raw, df_kpi_raw, df_manychat_raw, df_leads_raw, df_cotizaciones_raw, df_facturacion_raw, sheet_names_available = load_data()
 
 # --- Procesando EMPRESAS ---
 df_empresas = df_empresas_raw.copy()
@@ -1008,21 +1020,68 @@ def render_kpis_mercadeo():
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # === INDICADOR 1: LEADS NUEVOS ===
+    # === DEBUG: Verificar datos cargados ===
+    with st.expander("🔧 Debug - Verificar datos cargados", expanded=False):
+        st.write("**Hojas disponibles en el archivo:**")
+        st.write(sheet_names_available)
+        st.write("---")
+        st.write("**Estado de hojas KPI Mercadeo:**")
+        col_d1, col_d2, col_d3 = st.columns(3)
+        with col_d1:
+            st.write(f"LEADS: {'✅' if not df_leads_raw.empty else '❌'} {len(df_leads_raw)} filas, {len(df_leads_raw.columns)} cols")
+            if not df_leads_raw.empty:
+                st.write("Columnas:", list(df_leads_raw.columns))
+        with col_d2:
+            st.write(f"cotizaciones: {'✅' if not df_cotizaciones_raw.empty else '❌'} {len(df_cotizaciones_raw)} filas, {len(df_cotizaciones_raw.columns)} cols")
+            if not df_cotizaciones_raw.empty:
+                st.write("Columnas:", list(df_cotizaciones_raw.columns))
+        with col_d3:
+            st.write(f"facturacion: {'✅' if not df_facturacion_raw.empty else '❌'} {len(df_facturacion_raw)} filas, {len(df_facturacion_raw.columns)} cols")
+            if not df_facturacion_raw.empty:
+                st.write("Columnas:", list(df_facturacion_raw.columns))
+        
+        if not df_leads_raw.empty:
+            st.write("---")
+            st.write("**Preview LEADS (primeras 5 filas):**")
+            st.dataframe(df_leads_raw.head(), use_container_width=True)
+        
+        st.info("Si los indicadores muestran 0, verifique que los nombres de hojas coincidan exactamente: LEADS, cotizaciones, facturacion")
+    
+    # === DETECCIÓN AUTOMÁTICA DE COLUMNAS EN LEADS ===
     df_leads = df_leads_raw.copy()
-    if not df_leads.empty and len(df_leads.columns) >= 12:
-        # Columna L (índice 11) = mes
-        col_mes_leads = df_leads.columns[11]
-        df_leads[col_mes_leads] = df_leads[col_mes_leads].fillna('').astype(str).str.strip().str.lower()
+    leads_marzo = leads_abril = 0
+    pct_marzo = pct_abril = 0
+    col_mes_leads = None
+    col_calif = None
+    
+    if not df_leads.empty:
+        # Buscar columna de mes (nombres comunes)
+        for col in df_leads.columns:
+            col_lower = str(col).lower()
+            if any(x in col_lower for x in ['mes', 'month', 'periodo', 'fecha']):
+                col_mes_leads = col
+                break
         
-        leads_marzo = len(df_leads[df_leads[col_mes_leads] == 'marzo'])
-        leads_abril = len(df_leads[df_leads[col_mes_leads] == 'abril'])
+        # Buscar columna de calificación
+        for col in df_leads.columns:
+            col_lower = str(col).lower()
+            if any(x in col_lower for x in ['calif', 'oportunidad', 'mql', 'sql', 'estado']):
+                col_calif = col
+                break
         
-        pct_marzo = (leads_marzo / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
-        pct_abril = (leads_abril / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
-    else:
-        leads_marzo = leads_abril = 0
-        pct_marzo = pct_abril = 0
+        # Si no encontramos columnas específicas, usar índices como fallback
+        if col_mes_leads is None and len(df_leads.columns) >= 12:
+            col_mes_leads = df_leads.columns[11]  # Columna L
+        if col_calif is None and len(df_leads.columns) >= 8:
+            col_calif = df_leads.columns[7]  # Columna H
+        
+        # Calcular leads por mes
+        if col_mes_leads:
+            df_leads[col_mes_leads] = df_leads[col_mes_leads].fillna('').astype(str).str.strip().str.lower()
+            leads_marzo = len(df_leads[df_leads[col_mes_leads] == 'marzo'])
+            leads_abril = len(df_leads[df_leads[col_mes_leads] == 'abril'])
+            pct_marzo = (leads_marzo / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
+            pct_abril = (leads_abril / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
     
     def get_pct_class(pct):
         if pct >= 100: return "porcentaje-alto", "pct-green"
@@ -1075,9 +1134,12 @@ def render_kpis_mercadeo():
             show_detalle_leads_mes("abril", df_abr_fil)
     
     # === INDICADOR 2: TASA CONVERSIÓN ===
-    if not df_leads.empty and len(df_leads.columns) >= 8:
-        # Columna H (índice 7) = calificados
-        col_calif = df_leads.columns[7]
+    tasa_marzo = tasa_abril = 0
+    calif_marzo = calif_abril = 0
+    total_marzo = total_abril = 0
+    
+    if not df_leads.empty and col_mes_leads and col_calif:
+        # Normalizar columna de calificación
         df_leads[col_calif] = df_leads[col_calif].fillna('').astype(str).str.strip().str.lower()
         
         # Marzo
@@ -1091,8 +1153,6 @@ def render_kpis_mercadeo():
         total_abril = len(df_abril)
         calif_abril = len(df_abril[df_abril[col_calif].isin(['si', 'sí', 'yes', 'true', '1'])])
         tasa_abril = (calif_abril / total_abril * 100) if total_abril > 0 else 0
-    else:
-        tasa_marzo = tasa_abril = 0
     
     pct_tasa_marzo = (tasa_marzo / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
     pct_tasa_abril = (tasa_abril / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
@@ -1148,19 +1208,42 @@ def render_kpis_mercadeo():
     
     # === INDICADOR 3: NEGOCIOS COTIZADOS ===
     df_cot = df_cotizaciones_raw.copy()
-    if not df_cot.empty and len(df_cot.columns) >= 6:
-        # Columna F (índice 5) = valor
-        col_valor_cot = df_cot.columns[5]
-        df_cot[col_valor_cot] = pd.to_numeric(df_cot[col_valor_cot], errors='coerce').fillna(0)
+    cot_marzo = cot_abril = 0
+    col_valor_cot = None
+    col_mes_cot = None
+    
+    if not df_cot.empty:
+        # Buscar columna de valor (montos)
+        for col in df_cot.columns:
+            col_lower = str(col).lower()
+            if any(x in col_lower for x in ['valor', 'monto', 'total', 'precio', 'cantidad', 'importe', 'venta']):
+                col_valor_cot = col
+                break
         
-        # Asumimos que hay una columna de mes o fecha
-        # Si no, sumamos todo
-        cot_total = df_cot[col_valor_cot].sum()
-        # Dividimos aproximadamente entre marzo y abril (60/40 como estimación temporal)
-        cot_marzo = cot_total * 0.6
-        cot_abril = cot_total * 0.4
-    else:
-        cot_marzo = cot_abril = 0
+        # Buscar columna de mes
+        for col in df_cot.columns:
+            col_lower = str(col).lower()
+            if any(x in col_lower for x in ['mes', 'month', 'periodo', 'fecha']):
+                col_mes_cot = col
+                break
+        
+        # Fallback a posición F (índice 5) si no encontramos por nombre
+        if col_valor_cot is None and len(df_cot.columns) >= 6:
+            col_valor_cot = df_cot.columns[5]
+        
+        if col_valor_cot:
+            df_cot[col_valor_cot] = pd.to_numeric(df_cot[col_valor_cot], errors='coerce').fillna(0)
+            
+            # Si hay columna de mes, agrupar por mes
+            if col_mes_cot:
+                df_cot[col_mes_cot] = df_cot[col_mes_cot].fillna('').astype(str).str.strip().str.lower()
+                cot_marzo = df_cot[df_cot[col_mes_cot] == 'marzo'][col_valor_cot].sum()
+                cot_abril = df_cot[df_cot[col_mes_cot] == 'abril'][col_valor_cot].sum()
+            else:
+                # Si no hay mes, usamos todo para ambos meses (o dividir según lógica)
+                cot_total = df_cot[col_valor_cot].sum()
+                cot_marzo = cot_total * 0.6
+                cot_abril = cot_total * 0.4
     
     def format_currency(val):
         if val >= 1_000_000_000:
@@ -1220,21 +1303,32 @@ def render_kpis_mercadeo():
     
     # === INDICADOR 4: NEGOCIOS FACTURADOS ===
     df_fac = df_facturacion_raw.copy()
+    fac_marzo = fac_abril = 0
+    col_marzo_fac = None
+    col_abril_fac = None
+    
     if not df_fac.empty:
-        # Columnas L (índice 11) = marzo, M (índice 12) = abril
-        if len(df_fac.columns) >= 13:
-            col_marzo = df_fac.columns[11]
-            col_abril = df_fac.columns[12]
-            
-            df_fac[col_marzo] = pd.to_numeric(df_fac[col_marzo], errors='coerce').fillna(0)
-            df_fac[col_abril] = pd.to_numeric(df_fac[col_abril], errors='coerce').fillna(0)
-            
-            fac_marzo = df_fac[col_marzo].sum()
-            fac_abril = df_fac[col_abril].sum()
-        else:
-            fac_marzo = fac_abril = 0
-    else:
-        fac_marzo = fac_abril = 0
+        # Buscar columnas de marzo y abril por nombre
+        for col in df_fac.columns:
+            col_lower = str(col).lower()
+            if any(x in col_lower for x in ['marzo', 'mar', 'march']):
+                col_marzo_fac = col
+            if any(x in col_lower for x in ['abril', 'abr', 'april']):
+                col_abril_fac = col
+        
+        # Fallback: usar posiciones L (11) y M (12) si no encontramos por nombre
+        if col_marzo_fac is None and len(df_fac.columns) >= 12:
+            col_marzo_fac = df_fac.columns[11]
+        if col_abril_fac is None and len(df_fac.columns) >= 13:
+            col_abril_fac = df_fac.columns[12]
+        
+        # Calcular totales
+        if col_marzo_fac:
+            df_fac[col_marzo_fac] = pd.to_numeric(df_fac[col_marzo_fac], errors='coerce').fillna(0)
+            fac_marzo = df_fac[col_marzo_fac].sum()
+        if col_abril_fac:
+            df_fac[col_abril_fac] = pd.to_numeric(df_fac[col_abril_fac], errors='coerce').fillna(0)
+            fac_abril = df_fac[col_abril_fac].sum()
     
     pct_fac_marzo = (fac_marzo / METAS["negocios_facturados"]) * 100 if METAS["negocios_facturados"] > 0 else 0
     pct_fac_abril = (fac_abril / METAS["negocios_facturados"]) * 100 if METAS["negocios_facturados"] > 0 else 0
@@ -1278,16 +1372,16 @@ def render_kpis_mercadeo():
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_fac_mar", use_container_width=True):
             # Filtrar filas con valor en columna marzo
-            if 'col_marzo' in locals() and not df_fac.empty:
-                df_mar_fac = df_fac[df_fac[col_marzo] > 0]
+            if col_marzo_fac and not df_fac.empty:
+                df_mar_fac = df_fac[df_fac[col_marzo_fac] > 0]
             else:
                 df_mar_fac = df_facturacion_raw
             show_detalle_facturacion("marzo", fac_marzo, df_mar_fac)
     with c2:
         if st.button("🔍 Ver detalle Abril", key="btn_fac_abr", use_container_width=True):
             # Filtrar filas con valor en columna abril
-            if 'col_abril' in locals() and not df_fac.empty:
-                df_abr_fac = df_fac[df_fac[col_abril] > 0]
+            if col_abril_fac and not df_fac.empty:
+                df_abr_fac = df_fac[df_fac[col_abril_fac] > 0]
             else:
                 df_abr_fac = df_facturacion_raw
             show_detalle_facturacion("abril", fac_abril, df_abr_fac)
