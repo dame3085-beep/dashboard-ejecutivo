@@ -1131,9 +1131,10 @@ def render_kpis_mercadeo():
         # Normalizar columna de calificación
         df_leads[col_calif] = df_leads[col_calif].fillna('').astype(str).str.strip().str.lower()
         
-        # Función para detectar si es calificado
+        # Función para detectar si es calificado (solo "calificado", NO "descalificado")
         def es_calificado(val):
-            return 'calif' in val or 'oportunidad' in val or 'mql' in val or 'sql' in val
+            val = str(val).lower()
+            return 'calificado' in val and 'descalificado' not in val
         
         # Marzo
         df_marzo = df_leads[df_leads[col_mes_leads] == 'marzo']
@@ -1189,7 +1190,7 @@ def render_kpis_mercadeo():
     # Botones detalle Conversión
     def es_calificado_check(val):
         val = str(val).lower()
-        return 'calif' in val or 'oportunidad' in val or 'mql' in val or 'sql' in val
+        return 'calificado' in val and 'descalificado' not in val
     
     c1, c2, c_spacer = st.columns([1, 1, 3])
     with c1:
