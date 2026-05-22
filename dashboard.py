@@ -943,8 +943,8 @@ def render_kpis_mercadeo():
     .kpi-card-mkt {
         background: white;
         border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 15px;
+        padding: 25px 20px;
+        margin-bottom: 25px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.08);
         border-left: 5px solid #C7AB72;
     }
@@ -968,38 +968,51 @@ def render_kpis_mercadeo():
     }
     .kpi-mkt-values {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 15px;
+        grid-template-columns: 100px 1fr 1fr 1fr 1fr;
+        gap: 20px;
+        align-items: center;
     }
     .kpi-mkt-box {
         text-align: center;
-        padding: 12px 8px;
+        padding: 15px 10px;
         border-radius: 8px;
         background: #fafafa;
     }
-    .kpi-mkt-box.real { background: #f0f7ed; }
-    .kpi-mkt-box.porcentaje-alto { background: #e8f5e9; }
-    .kpi-mkt-box.porcentaje-medio { background: #fff8e1; }
-    .kpi-mkt-box.porcentaje-bajo { background: #ffebee; }
+    .kpi-mkt-box.real { background: #e8f5e9; }
+    .kpi-mkt-box.porcentaje-alto { background: #c8e6c9; }
+    .kpi-mkt-box.porcentaje-medio { background: #ffe082; }
+    .kpi-mkt-box.porcentaje-bajo { background: #ef9a9a; }
     .kpi-mkt-label {
-        font-size: 10px;
+        font-size: 11px;
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        color: #888;
-        margin-bottom: 5px;
+        color: #666;
+        margin-bottom: 8px;
+        font-weight: 600;
     }
     .kpi-mkt-value {
-        font-size: 22px;
+        font-size: 28px;
         font-weight: 700;
         color: #1D1D1B;
+        line-height: 1.2;
     }
-    .kpi-mkt-value.pct-green { color: #589642; }
-    .kpi-mkt-value.pct-yellow { color: #C7AB72; }
+    .kpi-mkt-value.pct-green { color: #2e7d32; }
+    .kpi-mkt-value.pct-yellow { color: #f57c00; }
     .kpi-mkt-value.pct-red { color: #c62828; }
-    .kpi-mkt-trend {
-        font-size: 10px;
+    .kpi-mkt-pct {
+        font-size: 14px;
+        font-weight: 600;
         margin-top: 4px;
+        display: block;
+    }
+    .kpi-mkt-pct.pct-green { color: #2e7d32; }
+    .kpi-mkt-pct.pct-yellow { color: #f57c00; }
+    .kpi-mkt-pct.pct-red { color: #c62828; }
+    .kpi-mkt-trend {
+        font-size: 11px;
+        margin-top: 6px;
         color: #666;
+        font-weight: 500;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -1120,6 +1133,8 @@ def render_kpis_mercadeo():
             df_abr_fil = df_leads[df_leads[col_mes_leads] == 'abril'] if col_mes_leads else pd.DataFrame()
             show_detalle_leads_mes("abril", df_abr_fil)
     
+    st.markdown("<br>", unsafe_allow_html=True)
+    
     # === INDICADOR 2: TASA CONVERSIÓN ===
     # Columna H (índice 7) = Etapa del lead
     # Un lead es "calificado" si contiene la palabra "calificado" o "calificada"
@@ -1203,6 +1218,8 @@ def render_kpis_mercadeo():
             df_abr_all = df_leads[df_leads[col_mes_leads] == 'abril'] if col_mes_leads else pd.DataFrame()
             df_abr_calif = df_abr_all[df_abr_all[col_calif].apply(es_calificado_check)] if col_calif and not df_abr_all.empty else pd.DataFrame()
             show_detalle_conversion("abril", calif_abril, total_abril, df_abr_calif, df_abr_all)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
     
     # === INDICADOR 3: NEGOCIOS COTIZADOS (A-H según especificación) ===
     # Columna F (índice 5) = Valor
@@ -1288,6 +1305,8 @@ def render_kpis_mercadeo():
                 df_cot_abr = df_cotizaciones_raw
             show_detalle_cotizaciones("abril", cot_abril, df_cot_abr)
     
+    st.markdown("<br>", unsafe_allow_html=True)
+    
     # === INDICADOR 4: NEGOCIOS FACTURADOS ===
     df_fac = df_facturacion_raw.copy()
     fac_marzo = fac_abril = 0
@@ -1372,6 +1391,8 @@ def render_kpis_mercadeo():
             else:
                 df_abr_fac = df_facturacion_raw
             show_detalle_facturacion("abril", fac_abril, df_abr_fac)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
     
     # === TABLA DETALLE (OPCIONAL) ===
     st.markdown("<br>", unsafe_allow_html=True)
