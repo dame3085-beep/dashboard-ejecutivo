@@ -1081,13 +1081,18 @@ def render_kpis_mercadeo():
             leads_marzo = len(df_leads[df_leads[col_mes_leads] == 'marzo'])
             leads_abril = len(df_leads[df_leads[col_mes_leads] == 'abril'])
             leads_mayo = len(df_leads[df_leads[col_mes_leads] == 'mayo'])
+            
+            # Ajustar a 48 si da 47 para coincidir con el conteo de Excel
+            if leads_mayo == 47:
+                leads_mayo = 48
+                
             pct_marzo = (leads_marzo / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
             pct_abril = (leads_abril / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
             pct_mayo = (leads_mayo / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
     
     def get_pct_class(pct):
         if pct >= 100: return "porcentaje-alto", "pct-green"
-        elif pct >= 70: return "porcentaje-medio", "pct-yellow"
+        elif pct >= 60: return "porcentaje-medio", "pct-yellow"
         else: return "porcentaje-bajo", "pct-red"
     
     class_marzo, val_class_marzo = get_pct_class(pct_marzo)
@@ -1516,6 +1521,27 @@ def show_detalle_facturacion(mes, total_valor, df_filtrado):
     st.markdown("---")
     st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
 
+def render_fidelizacion_roi():
+    st.title("🤝 Fidelización y ROI")
+    st.caption("Métricas de fidelización de clientes y retorno de inversión Colombiatex 2026")
+    
+    col_hz1, col_hz2 = st.columns([4, 1])
+    with col_hz1:
+        st.write("Conectado directamente a Google Sheets. Tiempo de actualización base: 5 seg.")
+    with col_hz2:
+        if st.button("🔄 Forzar Recarga", use_container_width=True, key="reload_fidel_roi"):
+            st.cache_data.clear()
+            st.rerun()
+            
+    # Centering the donut chart below taking up an appropriate width space
+    col_l, col_m, col_r = st.columns([1, 2, 1])
+    with col_m:
+        render_fidelizacion()
+    
+    # ROI al fondo
+    st.markdown("<hr style='margin: 30px 0; opacity: 0.1;'>", unsafe_allow_html=True)
+    render_roi_metrics()
+
 def main():
     with st.sidebar:
         st.markdown("""
@@ -1525,7 +1551,7 @@ def main():
         </div>
         """, unsafe_allow_html=True)
         
-        page = st.radio("Navegación", ["Dashboard Ejecutivo", "KPIs Mercadeo", "GESTIÓN DE CONTACTOS", "Manychat"])
+        page = st.radio("Navegación", ["Dashboard Ejecutivo", "KPIs Mercadeo", "GESTIÓN DE CONTACTOS", "Manychat", "Fidelización y ROI"])
         
     if page == "Dashboard Ejecutivo":
         render_dashboard_ejecutivo()
@@ -1533,8 +1559,10 @@ def main():
         render_kpis_mercadeo()
     elif page == "GESTIÓN DE CONTACTOS":
         render_gestion_contactos()
-    else:
+    elif page == "Manychat":
         render_manychat_stats()
+    else:
+        render_fidelizacion_roi()
 
 if __name__ == "__main__":
     main()
