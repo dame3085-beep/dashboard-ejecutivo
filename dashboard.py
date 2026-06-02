@@ -968,7 +968,7 @@ def render_kpis_mercadeo():
     }
     .kpi-mkt-values {
         display: grid;
-        grid-template-columns: 100px 1fr 1fr 1fr 1fr;
+        grid-template-columns: 100px 1fr 1fr 1fr 1fr 1fr 1fr;
         gap: 20px;
         align-items: center;
     }
@@ -1026,7 +1026,7 @@ def render_kpis_mercadeo():
                 <span style="color:#C7AB72;font-size:20px;">|</span>
                 <h2>KPI's MERCADEO</h2>
             </div>
-            <div class="subtitle">Medicion mensual con corte el ultimo viernes | Reporte a Gerencia Comercial | Periodo Mar-Abr 2026</div>
+            <div class="subtitle">Medicion mensual con corte el ultimo viernes | Reporte a Gerencia Comercial | Periodo Mar-May 2026</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1060,11 +1060,11 @@ def render_kpis_mercadeo():
             st.write(f"**facturacion:** {len(df_facturacion_raw)} filas, columnas: {list(df_facturacion_raw.columns) if not df_facturacion_raw.empty else 'N/A'}")
     
     # === DETECCIÓN DE COLUMNAS EN LEADS (A-N según especificación) ===
-    # Columna L (índice 11) = Mes (ahora contiene texto: marzo, abril)
+    # Columna L (índice 11) = Mes (ahora contiene texto: marzo, abril, mayo)
     # Columna H (índice 7) = Etapa del lead = CALIFICACIÓN
     df_leads = df_leads_raw.copy()
-    leads_marzo = leads_abril = 0
-    pct_marzo = pct_abril = 0
+    leads_marzo = leads_abril = leads_mayo = 0
+    pct_marzo = pct_abril = pct_mayo = 0
     col_mes_leads = None
     col_calif = None
     
@@ -1080,8 +1080,10 @@ def render_kpis_mercadeo():
             df_leads[col_mes_leads] = df_leads[col_mes_leads].fillna('').astype(str).str.strip().str.lower()
             leads_marzo = len(df_leads[df_leads[col_mes_leads] == 'marzo'])
             leads_abril = len(df_leads[df_leads[col_mes_leads] == 'abril'])
+            leads_mayo = len(df_leads[df_leads[col_mes_leads] == 'mayo'])
             pct_marzo = (leads_marzo / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
             pct_abril = (leads_abril / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
+            pct_mayo = (leads_mayo / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
     
     def get_pct_class(pct):
         if pct >= 100: return "porcentaje-alto", "pct-green"
@@ -1090,6 +1092,7 @@ def render_kpis_mercadeo():
     
     class_marzo, val_class_marzo = get_pct_class(pct_marzo)
     class_abril, val_class_abril = get_pct_class(pct_abril)
+    class_mayo, val_class_mayo = get_pct_class(pct_mayo)
     
     st.markdown(f"""
     <div class="kpi-card-mkt">
@@ -1118,12 +1121,20 @@ def render_kpis_mercadeo():
                 <div class="kpi-mkt-label">Abr %</div>
                 <div class="kpi-mkt-value {val_class_abril}">{pct_abril:.0f}%</div>
             </div>
+            <div class="kpi-mkt-box real">
+                <div class="kpi-mkt-label">May Real</div>
+                <div class="kpi-mkt-value">{leads_mayo}</div>
+            </div>
+            <div class="kpi-mkt-box {class_mayo}">
+                <div class="kpi-mkt-label">May %</div>
+                <div class="kpi-mkt-value {val_class_mayo}">{pct_mayo:.0f}%</div>
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
     # Botones detalle Leads
-    c1, c2, c_spacer = st.columns([1, 1, 3])
+    c1, c2, c3, c_spacer = st.columns([1, 1, 1, 2])
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_leads_mar", use_container_width=True) and not df_leads.empty:
             df_mar_fil = df_leads[df_leads[col_mes_leads] == 'marzo'] if col_mes_leads else pd.DataFrame()
@@ -1132,15 +1143,19 @@ def render_kpis_mercadeo():
         if st.button("🔍 Ver detalle Abril", key="btn_leads_abr", use_container_width=True) and not df_leads.empty:
             df_abr_fil = df_leads[df_leads[col_mes_leads] == 'abril'] if col_mes_leads else pd.DataFrame()
             show_detalle_leads_mes("abril", df_abr_fil)
+    with c3:
+        if st.button("🔍 Ver detalle Mayo", key="btn_leads_may", use_container_width=True) and not df_leads.empty:
+            df_may_fil = df_leads[df_leads[col_mes_leads] == 'mayo'] if col_mes_leads else pd.DataFrame()
+            show_detalle_leads_mes("mayo", df_may_fil)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     # === INDICADOR 2: TASA CONVERSIÓN ===
     # Columna H (índice 7) = Etapa del lead
     # Un lead es "calificado" si contiene la palabra "calificado" o "calificada"
-    tasa_marzo = tasa_abril = 0
-    calif_marzo = calif_abril = 0
-    total_marzo = total_abril = 0
+    tasa_marzo = tasa_abril = tasa_mayo = 0
+    calif_marzo = calif_abril = calif_mayo = 0
+    total_marzo = total_abril = total_mayo = 0
     
     if not df_leads.empty and col_mes_leads and col_calif:
         # Normalizar columna de calificación
@@ -1162,12 +1177,20 @@ def render_kpis_mercadeo():
         total_abril = len(df_abril)
         calif_abril = len(df_abril[df_abril[col_calif].apply(es_calificado)])
         tasa_abril = (calif_abril / total_abril * 100) if total_abril > 0 else 0
+
+        # Mayo
+        df_mayo = df_leads[df_leads[col_mes_leads] == 'mayo']
+        total_mayo = len(df_mayo)
+        calif_mayo = len(df_mayo[df_mayo[col_calif].apply(es_calificado)])
+        tasa_mayo = (calif_mayo / total_mayo * 100) if total_mayo > 0 else 0
     
     pct_tasa_marzo = (tasa_marzo / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
     pct_tasa_abril = (tasa_abril / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
+    pct_tasa_mayo = (tasa_mayo / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
     
     class_tasa_marzo, val_class_tasa_marzo = get_pct_class(pct_tasa_marzo)
     class_tasa_abril, val_class_tasa_abril = get_pct_class(pct_tasa_abril)
+    class_tasa_mayo, val_class_tasa_mayo = get_pct_class(pct_tasa_mayo)
     
     st.markdown(f"""
     <div class="kpi-card-mkt">
@@ -1198,6 +1221,15 @@ def render_kpis_mercadeo():
                 <div class="kpi-mkt-label">Abr %</div>
                 <div class="kpi-mkt-value {val_class_tasa_abril}">{pct_tasa_abril:.0f}%</div>
             </div>
+            <div class="kpi-mkt-box real">
+                <div class="kpi-mkt-label">May Real</div>
+                <div class="kpi-mkt-value">{tasa_mayo:.1f}%</div>
+                <div class="kpi-mkt-trend">({calif_mayo}/{total_mayo})</div>
+            </div>
+            <div class="kpi-mkt-box {class_tasa_mayo}">
+                <div class="kpi-mkt-label">May %</div>
+                <div class="kpi-mkt-value {val_class_tasa_mayo}">{pct_tasa_mayo:.0f}%</div>
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1207,7 +1239,7 @@ def render_kpis_mercadeo():
         val = str(val).lower()
         return 'calificado' in val and 'descalificado' not in val
     
-    c1, c2, c_spacer = st.columns([1, 1, 3])
+    c1, c2, c3, c_spacer = st.columns([1, 1, 1, 2])
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_conv_mar", use_container_width=True) and not df_leads.empty:
             df_mar_all = df_leads[df_leads[col_mes_leads] == 'marzo'] if col_mes_leads else pd.DataFrame()
@@ -1218,6 +1250,11 @@ def render_kpis_mercadeo():
             df_abr_all = df_leads[df_leads[col_mes_leads] == 'abril'] if col_mes_leads else pd.DataFrame()
             df_abr_calif = df_abr_all[df_abr_all[col_calif].apply(es_calificado_check)] if col_calif and not df_abr_all.empty else pd.DataFrame()
             show_detalle_conversion("abril", calif_abril, total_abril, df_abr_calif, df_abr_all)
+    with c3:
+        if st.button("🔍 Ver detalle Mayo", key="btn_conv_may", use_container_width=True) and not df_leads.empty:
+            df_may_all = df_leads[df_leads[col_mes_leads] == 'mayo'] if col_mes_leads else pd.DataFrame()
+            df_may_calif = df_may_all[df_may_all[col_calif].apply(es_calificado_check)] if col_calif and not df_may_all.empty else pd.DataFrame()
+            show_detalle_conversion("mayo", calif_mayo, total_mayo, df_may_calif, df_may_all)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -1225,7 +1262,7 @@ def render_kpis_mercadeo():
     # Columna F (índice 5) = Valor
     # Columna G (índice 6) = Fecha de creación (contiene mes)
     df_cot = df_cotizaciones_raw.copy()
-    cot_marzo = cot_abril = 0
+    cot_marzo = cot_abril = cot_mayo = 0
     
     if not df_cot.empty and len(df_cot.columns) >= 7:
         col_valor_cot = df_cot.columns[5]  # Columna F - Valor
@@ -1235,10 +1272,11 @@ def render_kpis_mercadeo():
         
         # Extraer mes de la fecha
         df_cot[col_fecha_cot] = pd.to_datetime(df_cot[col_fecha_cot], errors='coerce')
-        df_cot['mes_nombre'] = df_cot[col_fecha_cot].dt.strftime('%B').str.lower().str.replace('march', 'marzo').str.replace('april', 'abril')
+        df_cot['mes_nombre'] = df_cot[col_fecha_cot].dt.strftime('%B').str.lower().str.replace('march', 'marzo').str.replace('april', 'abril').str.replace('may', 'mayo')
         
         cot_marzo = df_cot[df_cot['mes_nombre'] == 'marzo'][col_valor_cot].sum()
         cot_abril = df_cot[df_cot['mes_nombre'] == 'abril'][col_valor_cot].sum()
+        cot_mayo = df_cot[df_cot['mes_nombre'] == 'mayo'][col_valor_cot].sum()
     
     def format_currency(val):
         if val >= 1_000_000_000:
@@ -1251,12 +1289,15 @@ def render_kpis_mercadeo():
     
     pct_cot_marzo = (cot_marzo / METAS["negocios_cotizados"]) * 100 if METAS["negocios_cotizados"] > 0 else 0
     pct_cot_abril = (cot_abril / METAS["negocios_cotizados"]) * 100 if METAS["negocios_cotizados"] > 0 else 0
+    pct_cot_mayo = (cot_mayo / METAS["negocios_cotizados"]) * 100 if METAS["negocios_cotizados"] > 0 else 0
     
     class_cot_marzo, val_class_cot_marzo = get_pct_class(pct_cot_marzo)
     class_cot_abril, val_class_cot_abril = get_pct_class(pct_cot_abril)
+    class_cot_mayo, val_class_cot_mayo = get_pct_class(pct_cot_mayo)
     
     st.markdown(f"""
     <div class="kpi-card-mkt">
+        <div class="kpi-card-mkt">
         <div class="kpi-mkt-header">
             <div class="kpi-mkt-title">Negocios cotizados generados por mercadeo</div>
             <div class="kpi-mkt-meta">Meta mensual: {format_currency(METAS['negocios_cotizados'])}</div>
@@ -1282,12 +1323,20 @@ def render_kpis_mercadeo():
                 <div class="kpi-mkt-label">Abr %</div>
                 <div class="kpi-mkt-value {val_class_cot_abril}">{pct_cot_abril:.0f}%</div>
             </div>
+            <div class="kpi-mkt-box real">
+                <div class="kpi-mkt-label">May Real</div>
+                <div class="kpi-mkt-value">{format_currency(cot_mayo)}</div>
+            </div>
+            <div class="kpi-mkt-box {class_cot_mayo}">
+                <div class="kpi-mkt-label">May %</div>
+                <div class="kpi-mkt-value {val_class_cot_mayo}">{pct_cot_mayo:.0f}%</div>
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
     # Botones detalle Cotizaciones
-    c1, c2, c_spacer = st.columns([1, 1, 3])
+    c1, c2, c3, c_spacer = st.columns([1, 1, 1, 2])
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_cot_mar", use_container_width=True):
             # Filtrar cotizaciones de marzo por fecha
@@ -1304,29 +1353,42 @@ def render_kpis_mercadeo():
             else:
                 df_cot_abr = df_cotizaciones_raw
             show_detalle_cotizaciones("abril", cot_abril, df_cot_abr)
+    with c3:
+        if st.button("🔍 Ver detalle Mayo", key="btn_cot_may", use_container_width=True):
+            # Filtrar cotizaciones de mayo por fecha
+            if not df_cot.empty and 'mes_nombre' in df_cot.columns:
+                df_cot_may = df_cot[df_cot['mes_nombre'] == 'mayo']
+            else:
+                df_cot_may = df_cotizaciones_raw
+            show_detalle_cotizaciones("mayo", cot_mayo, df_cot_may)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     # === INDICADOR 4: NEGOCIOS FACTURADOS ===
     df_fac = df_facturacion_raw.copy()
-    fac_marzo = fac_abril = 0
+    fac_marzo = fac_abril = fac_mayo = 0
     col_marzo_fac = None
     col_abril_fac = None
+    col_mayo_fac = None
     
     if not df_fac.empty:
-        # Buscar columnas de marzo y abril por nombre
+        # Buscar columnas de marzo, abril y mayo por nombre
         for col in df_fac.columns:
             col_lower = str(col).lower()
             if any(x in col_lower for x in ['marzo', 'mar', 'march']):
                 col_marzo_fac = col
             if any(x in col_lower for x in ['abril', 'abr', 'april']):
                 col_abril_fac = col
+            if any(x in col_lower for x in ['mayo', 'may', 'mayo']):
+                col_mayo_fac = col
         
-        # Fallback: usar posiciones L (11) y M (12) si no encontramos por nombre
+        # Fallback: usar posiciones L (11), M (12) y N (13) si no encontramos por nombre
         if col_marzo_fac is None and len(df_fac.columns) >= 12:
             col_marzo_fac = df_fac.columns[11]
         if col_abril_fac is None and len(df_fac.columns) >= 13:
             col_abril_fac = df_fac.columns[12]
+        if col_mayo_fac is None and len(df_fac.columns) >= 14:
+            col_mayo_fac = df_fac.columns[13]
         
         # Calcular totales
         if col_marzo_fac:
@@ -1335,12 +1397,17 @@ def render_kpis_mercadeo():
         if col_abril_fac:
             df_fac[col_abril_fac] = pd.to_numeric(df_fac[col_abril_fac], errors='coerce').fillna(0)
             fac_abril = df_fac[col_abril_fac].sum()
+        if col_mayo_fac:
+            df_fac[col_mayo_fac] = pd.to_numeric(df_fac[col_mayo_fac], errors='coerce').fillna(0)
+            fac_mayo = df_fac[col_mayo_fac].sum()
     
     pct_fac_marzo = (fac_marzo / METAS["negocios_facturados"]) * 100 if METAS["negocios_facturados"] > 0 else 0
     pct_fac_abril = (fac_abril / METAS["negocios_facturados"]) * 100 if METAS["negocios_facturados"] > 0 else 0
+    pct_fac_mayo = (fac_mayo / METAS["negocios_facturados"]) * 100 if METAS["negocios_facturados"] > 0 else 0
     
     class_fac_marzo, val_class_fac_marzo = get_pct_class(pct_fac_marzo)
     class_fac_abril, val_class_fac_abril = get_pct_class(pct_fac_abril)
+    class_fac_mayo, val_class_fac_mayo = get_pct_class(pct_fac_mayo)
     
     st.markdown(f"""
     <div class="kpi-card-mkt">
@@ -1369,12 +1436,20 @@ def render_kpis_mercadeo():
                 <div class="kpi-mkt-label">Abr %</div>
                 <div class="kpi-mkt-value {val_class_fac_abril}">{pct_fac_abril:.0f}%</div>
             </div>
+            <div class="kpi-mkt-box real">
+                <div class="kpi-mkt-label">May Real</div>
+                <div class="kpi-mkt-value">{format_currency(fac_mayo)}</div>
+            </div>
+            <div class="kpi-mkt-box {class_fac_mayo}">
+                <div class="kpi-mkt-label">May %</div>
+                <div class="kpi-mkt-value {val_class_fac_mayo}">{pct_fac_mayo:.0f}%</div>
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
     # Botones detalle Facturación
-    c1, c2, c_spacer = st.columns([1, 1, 3])
+    c1, c2, c3, c_spacer = st.columns([1, 1, 1, 2])
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_fac_mar", use_container_width=True):
             # Filtrar filas con valor en columna marzo
@@ -1391,6 +1466,14 @@ def render_kpis_mercadeo():
             else:
                 df_abr_fac = df_facturacion_raw
             show_detalle_facturacion("abril", fac_abril, df_abr_fac)
+    with c3:
+        if st.button("🔍 Ver detalle Mayo", key="btn_fac_may", use_container_width=True):
+            # Filtrar filas con valor en columna mayo
+            if col_mayo_fac and not df_fac.empty:
+                df_may_fac = df_fac[df_fac[col_mayo_fac] > 0]
+            else:
+                df_may_fac = df_facturacion_raw
+            show_detalle_facturacion("mayo", fac_mayo, df_may_fac)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
