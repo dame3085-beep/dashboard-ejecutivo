@@ -1,6 +1,8 @@
 import streamlit as st
 import textwrap
 import pandas as pd
+import re
+import time
 
 # ==== CONFIGURACIÓN DE PÁGINA ====
 st.set_page_config(page_title="Dashboard Directivo", layout="wide", initial_sidebar_state="expanded")
@@ -49,6 +51,7 @@ st.markdown(textwrap.dedent("""
     .border-food { border-top: 4px solid #589642; } 
     .border-distribuidor { border-top: 4px solid #C7AB72; }
     .border-grandes { border-top: 4px solid #8a7452; }
+    .border-otros { border-top: 4px solid #6b6b69; }
     .channel-name { font-size: 14px; font-weight: 600; color: #1D1D1B; margin-bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .channel-reg { font-size: 26px; font-weight: bold; color: #1D1D1B; display: flex; align-items: baseline; }
     .reg-label { font-size: 10px; font-weight: normal; color: #6b6b69; margin-left: 3px; }
@@ -57,6 +60,7 @@ st.markdown(textwrap.dedent("""
     .color-food { color: #589642; } 
     .color-distribuidor { color: #C7AB72; } 
     .color-grandes { color: #8a7452; }
+    .color-otros { color: #6b6b69; }
     .conversion-rate { font-size: 12px; color: #6b6b69; margin: 8px 0; display: flex; align-items: center; }
     .conversion-rate svg { margin-right: 3px; width: 10px; height: 10px; }
     .stage-3-pct { font-size: 18px; font-weight: normal; margin-left: 8px; opacity: 0.9; }
@@ -109,6 +113,34 @@ st.markdown(textwrap.dedent("""
     .bg-ganada     { background-color: #589642; color: white;   width: 70%; }
     .bg-perdida    { background-color: #7a5c2e; color: white;   width: 65%; }
     .bg-pausado    { background-color: #a8936a; color: #1D1D1B; width: 55%; }
+
+    /* Paneles de filtros: compactos y alineados con la identidad visual */
+    div[data-testid="stExpander"] {
+        border: 1px solid #e8e4dc;
+        border-radius: 12px;
+        background: linear-gradient(180deg, #ffffff 0%, #fbfaf7 100%);
+        box-shadow: 0 6px 18px rgba(29, 29, 27, 0.05);
+        overflow: hidden;
+    }
+    div[data-testid="stExpander"] details summary {
+        color: #1D1D1B;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+    }
+    div[data-testid="stExpander"] [data-testid="stCaptionContainer"] {
+        color: #75674e;
+        margin-bottom: 0.2rem;
+    }
+    span[data-baseweb="tag"] {
+        background-color: #efe7d7 !important;
+        color: #1D1D1B !important;
+        border-radius: 999px !important;
+    }
+    div[data-baseweb="select"] > div,
+    div[data-testid="stDateInput"] input {
+        border-color: #ddd3c0 !important;
+        border-radius: 9px !important;
+    }
 </style>
 """), unsafe_allow_html=True)
 
@@ -116,7 +148,10 @@ st.markdown(textwrap.dedent("""
 @st.cache_data(ttl="5s")
 def load_data():
     # Usamos el formato de exportacion directa a xlsx para evitar bloqueos de API
-    url = "https://docs.google.com/spreadsheets/d/1AQ9KX-gUW9VcSC3PypbsESPi_YZ939i_CBgVrft2xko/export?format=xlsx"
+    url = (
+        "https://docs.google.com/spreadsheets/d/1AQ9KX-gUW9VcSC3PypbsESPi_YZ939i_CBgVrft2xko/"
+        f"export?format=xlsx&cachebust={time.time_ns()}"
+    )
     xls = pd.ExcelFile(url)
     df_emp = pd.read_excel(xls, sheet_name="Empresas")
     df_neg = pd.read_excel(xls, sheet_name="Negocios")
@@ -174,6 +209,24 @@ def load_data():
             break
         except:
             continue
+    # La exportación XLSX de Google puede conservar una versión anterior durante varios minutos.
+    # Para este KPI, GViz refleja los cambios de la pestaña de forma inmediata.
+    try:
+        facturacion_url = (
+            "https://docs.google.com/spreadsheets/d/1AQ9KX-gUW9VcSC3PypbsESPi_YZ939i_CBgVrft2xko/"
+            f"gviz/tq?tqx=out:csv&sheet=FACTURACION&cachebust={time.time_ns()}"
+        )
+        df_facturacion_live = pd.read_csv(facturacion_url)
+        facturacion_cols = [
+            "RAZON SOCIAL", "MARCA", "jun-25", "jul-25", "ago-25", "sep-25", "oct-25", "nov-25",
+            "dic-25", "ene-26", "feb-26", "mar-26", "abr-26", "may-26", "jun-26", "jul-26", "ago-26",
+        ]
+        if len(df_facturacion_live.columns) >= len(facturacion_cols):
+            df_facturacion_live = df_facturacion_live.iloc[:, :len(facturacion_cols)]
+            df_facturacion_live.columns = facturacion_cols
+            df_facturacion = df_facturacion_live
+    except Exception:
+        pass
     
     # Guardar nombres de hojas disponibles para debug
     sheet_names = xls.sheet_names
@@ -183,7 +236,7 @@ def load_data():
 df_empresas_raw, df_negocios_raw, df_fid_raw, df_roi_raw, df_kpi_raw, df_manychat_raw, df_leads_raw, df_cotizaciones_raw, df_facturacion_raw, sheet_names_available = load_data()
 
 # --- Procesando EMPRESAS ---
-df_empresas = df_empresas_raw.copy()
+df_empresas = df_empresas_raw.dropna(subset=['ID de registro']).copy()
 
 # Normalización de Canales
 def normalize_canal(ch):
@@ -196,9 +249,21 @@ def normalize_canal(ch):
         return 'Retail'
     if ch_upper in ['FOOD SERVICE', 'FOODSERVICE']:
         return 'Food Service'
-    return str(ch).strip()
+    return 'Otros'
 
 df_empresas['Canal_Norm'] = df_empresas['Canal'].apply(normalize_canal)
+
+# Valor estable y legible para filtrar registros sin asesor asignado.
+if 'Propietario' in df_empresas.columns:
+    df_empresas['Asesor_Filtro'] = (
+        df_empresas['Propietario']
+        .fillna('Sin asesor')
+        .astype(str)
+        .str.strip()
+        .replace('', 'Sin asesor')
+    )
+else:
+    df_empresas['Asesor_Filtro'] = 'Sin asesor'
 
 channels_data = []
 # Mapeo de categorías para visualización
@@ -206,7 +271,8 @@ class_map = {
     'Retail': 'retail', 
     'Food Service': 'food', 
     'Distribuidor': 'distribuidor',
-    'Grandes Superficies': 'grandes'
+    'Grandes Superficies': 'grandes',
+    'Otros': 'otros'
 }
 
 # Recalcular totales solo sobre los canales activos
@@ -235,6 +301,8 @@ data_empresas = {
 df_negocios = df_negocios_raw.copy()
 df_negocios.columns = [col.strip() if isinstance(col, str) else col for col in df_negocios.columns]
 df_negocios['Valor'] = pd.to_numeric(df_negocios['Valor'], errors='coerce').fillna(0)
+df_negocios['Fecha_Filtro'] = pd.to_datetime(df_negocios['Fecha de creacion'], errors='coerce')
+df_negocios['Propietario del negocio'] = df_negocios['Propietario del negocio'].fillna('Sin asesor').astype(str).str.strip()
 
 def format_currency_short(val):
     if val >= 1_000_000_000: return f"${val/1_000_000_000:.1f}B"
@@ -243,7 +311,13 @@ def format_currency_short(val):
     else: return f"${val:.0f}"
 
 # Normalizamos la columna para quitar tildes en 'ó' y manejar espacios extra
-df_negocios['Etapa del negocio'] = df_negocios['Etapa del negocio'].str.strip().str.replace('ó', 'o').str.replace('Ó', 'O')
+df_negocios['Etapa del negocio'] = (
+    df_negocios['Etapa del negocio']
+    .astype(str)
+    .str.strip()
+    .str.replace('\u00f3', 'o', regex=False)
+    .str.replace('\u00d3', 'O', regex=False)
+)
 
 group_neg = df_negocios.groupby('Etapa del negocio')['Valor'].agg(['count', 'sum']).reset_index()
 
@@ -404,21 +478,26 @@ def render_roi_metrics():
 
 
 @st.dialog("📋 Listado Detallado de Empresas", width="large")
-def show_detalle_empresas(canal_name):
-    st.write(f"Explorando datos brutos de la hoja para el canal: **{canal_name}**")
-    df_filtered = df_empresas[df_empresas['Canal_Norm'] == canal_name]
+def show_detalle_empresas(canal_name, asesores_seleccionados):
+    st.write(f"Registros de la hoja **Empresas** para el canal: **{canal_name}**. Incluye el periodo Ene-Jul 2026.")
+    df_filtered = df_empresas[
+        (df_empresas['Canal_Norm'] == canal_name)
+        & (df_empresas['Asesor_Filtro'].isin(asesores_seleccionados))
+    ].copy()
+    df_filtered.drop(columns=['Canal_Norm', 'Asesor_Filtro'], errors='ignore', inplace=True)
     st.dataframe(df_filtered, use_container_width=True, hide_index=True)
 
 @st.dialog("📋 Listado Detallado de Negocios", width="large")
-def show_detalle_negocios(stage_name):
+def show_detalle_negocios(stage_name, df_source):
     st.write(f"Explorando datos brutos de la hoja para la etapa: **{stage_name}**")
-    df_filtered = df_negocios[df_negocios['Etapa del negocio'].str.upper() == stage_name.upper()].copy()
+    df_filtered = df_source[df_source['Etapa del negocio'].str.upper() == stage_name.upper()].copy()
     
     # Reordenar columnas a petición del usuario
     desired_order = ['Fecha de creacion', 'Propietario del negocio', 'Canal', 'Origen Empresa']
     rest_cols = [c for c in df_filtered.columns if c not in desired_order]
     final_order = [c for c in desired_order if c in df_filtered.columns] + rest_cols
     df_display = df_filtered[final_order].copy()
+    df_display.drop(columns=['Fecha_Filtro'], errors='ignore', inplace=True)
     
     # Formatear columna Valor con signo $
     if 'Valor' in df_display.columns:
@@ -449,15 +528,75 @@ def render_fidelizacion():
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_embudo_empresas():
-    # Top block
+    asesores_disponibles = sorted(df_empresas_active['Asesor_Filtro'].unique().tolist())
+    canales_disponibles = [
+        canal for canal in class_map
+        if canal in df_empresas_active['Canal_Norm'].unique()
+    ]
+
+    with st.expander("⚙️ Filtrar empresas", expanded=True):
+        st.caption("Combina asesores y canales para explorar el embudo.")
+        asesores_seleccionados = st.multiselect(
+            "Asesor",
+            options=asesores_disponibles,
+            default=asesores_disponibles,
+            key="filtro_empresas_asesores",
+            help="Selecciona uno o varios asesores."
+        )
+        canales_seleccionados = st.multiselect(
+            "Canal",
+            options=canales_disponibles,
+            default=canales_disponibles,
+            key="filtro_empresas_canales",
+            help="Selecciona uno o varios canales."
+        )
+
+    if not asesores_seleccionados or not canales_seleccionados:
+        st.info("Selecciona al menos un asesor y un canal para visualizar el embudo.")
+        return
+
+    df_empresas_filtrado = df_empresas_active[
+        df_empresas_active['Asesor_Filtro'].isin(asesores_seleccionados)
+        & df_empresas_active['Canal_Norm'].isin(canales_seleccionados)
+    ].copy()
+
+    total_registradas_filtrado = len(df_empresas_filtrado)
+    total_contactadas_filtrado = (
+        df_empresas_filtrado['CONTACTADO'].sum()
+        if pd.api.types.is_bool_dtype(df_empresas_filtrado['CONTACTADO'])
+        else (df_empresas_filtrado['CONTACTADO'] == True).sum()
+    )
+    pct_total_filtrado = (
+        f"{(total_contactadas_filtrado / total_registradas_filtrado) * 100:.1f}%"
+        if total_registradas_filtrado > 0 else "0.0%"
+    )
+
+    channels_data_filtrado = []
+    for ch_name in canales_seleccionados:
+        df_ch = df_empresas_filtrado[df_empresas_filtrado['Canal_Norm'] == ch_name]
+        reg = len(df_ch)
+        cont = (
+            df_ch['CONTACTADO'].sum()
+            if pd.api.types.is_bool_dtype(df_ch['CONTACTADO'])
+            else (df_ch['CONTACTADO'] == True).sum()
+        )
+        conv = f"{(cont / reg) * 100:.1f}%" if reg > 0 else "0.0%"
+        channels_data_filtrado.append({
+            "name": ch_name,
+            "reg": reg,
+            "conv": conv,
+            "cont": cont,
+            "class": class_map[ch_name]
+        })
+
     html_top = f"""<div class="funnel-container" style="padding-bottom: 20px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; margin-bottom: 0;">
-    <div class="date-badge">Ene — Abr 2026</div>
+    <div class="date-badge">Ene — Jul 2026</div>
     <div class="main-title">REPORTE</div>
     <div class="funnel-title">Embudo de Empresas</div>
     <div class="funnel-subtitle">Registradas → Canal → Contactadas por canal</div>
     <div class="stage-1">
         <div><div class="stage-label">ETAPA 1</div><div class="stage-name">Registradas</div></div>
-        <div class="stage-value">{data_empresas['total_registradas']}</div>
+        <div class="stage-value">{total_registradas_filtrado}</div>
     </div>
     <div class="connector-1"></div>
     <div class="stage-2-container" style="box-shadow: none; margin-bottom: -10px; padding-bottom: 0;">
@@ -466,15 +605,13 @@ def render_embudo_empresas():
 </div>"""
     st.markdown(html_top, unsafe_allow_html=True)
 
-    # Middle block: native columns with HTML box + native button integrated
     st.markdown('<div style="background-color: #f7f9fc; padding: 0 40px;">', unsafe_allow_html=True)
-    cols = st.columns(len(data_empresas['channels']))
-    
+    cols = st.columns(len(channels_data_filtrado))
     st.markdown("""<style>
     .ch-box-native { background-color: white; border: 1px solid #eee; padding: 15px 10px; border-radius: 8px; text-align: center; margin-bottom: 5px; }
     </style>""", unsafe_allow_html=True)
-    
-    for idx, (col_e, ch) in enumerate(zip(cols, data_empresas['channels'])):
+
+    for col_e, ch in zip(cols, channels_data_filtrado):
         with col_e:
             ch_html = f"""<div class="ch-box-native border-{ch['class']}">
     <div class="channel-name">{ch['name']}</div>
@@ -483,29 +620,101 @@ def render_embudo_empresas():
     <div class="channel-cont-value color-{ch['class']}" style="justify-content: center;">{ch['cont']} <span class="reg-label" style="color:#637381;">cont.</span></div>
 </div>"""
             st.markdown(ch_html, unsafe_allow_html=True)
-            if st.button("📊 Extraer", key=f"btn_emp_{idx}", use_container_width=True):
-                show_detalle_empresas(ch['name'])
+            if st.button("📊 Extraer", key=f"btn_emp_{ch['class']}", use_container_width=True):
+                show_detalle_empresas(ch['name'], asesores_seleccionados)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Bottom block
     html_bot = f"""<div class="funnel-container" style="padding-top: 0; margin-top: 0; border-top-left-radius: 0; border-top-right-radius: 0;">
     <div class="connector-2" style="margin-top: 15px;"></div>
     <div class="stage-3">
         <div><div class="stage-label">ETAPA 3</div><div class="stage-name">Contactadas</div></div>
-        <div><span class="stage-value">{data_empresas['total_contactadas']}</span><span class="stage-3-pct">({data_empresas['pct_total']})</span></div>
+        <div><span class="stage-value">{total_contactadas_filtrado}</span><span class="stage-3-pct">({pct_total_filtrado})</span></div>
     </div>
 </div>"""
     st.markdown(html_bot, unsafe_allow_html=True)
 
 def render_embudo_negocios():
+    fechas_validas = df_negocios['Fecha_Filtro'].dropna()
+    if fechas_validas.empty:
+        st.warning("No hay fechas válidas en la hoja de negocios.")
+        return
+
+    asesores_disponibles = sorted(df_negocios['Propietario del negocio'].unique().tolist())
+    etapas_disponibles = list(stage_order_map.keys())
+
+    with st.expander("⚙️ Filtrar negocios", expanded=True):
+        st.caption("Ajusta el periodo, los asesores y las etapas visibles.")
+        rango_fechas = st.date_input(
+            "Rango de fechas",
+            value=(fechas_validas.min().date(), fechas_validas.max().date()),
+            min_value=fechas_validas.min().date(),
+            max_value=fechas_validas.max().date(),
+            key="filtro_negocios_rango_fechas",
+        )
+        asesores_seleccionados = st.multiselect(
+            "Asesor",
+            options=asesores_disponibles,
+            default=asesores_disponibles,
+            key="filtro_negocios_asesores",
+            help="Selecciona uno o varios asesores.",
+        )
+        etapas_seleccionadas = st.multiselect(
+            "Etapa",
+            options=etapas_disponibles,
+            default=etapas_disponibles,
+            key="filtro_negocios_etapas",
+            help="Selecciona una o varias etapas.",
+            format_func=lambda etapa: etapa.replace("Negociacion", "Negociación"),
+        )
+
+    if not isinstance(rango_fechas, (tuple, list)) or len(rango_fechas) != 2:
+        st.info("Selecciona la fecha inicial y la fecha final del periodo.")
+        return
+    fecha_inicio, fecha_fin = rango_fechas
+
+    if fecha_inicio > fecha_fin:
+        st.warning("La fecha inicial no puede ser posterior a la fecha final.")
+        return
+    if not asesores_seleccionados or not etapas_seleccionadas:
+        st.info("Selecciona al menos un asesor y una etapa para visualizar el embudo.")
+        return
+
+    df_negocios_filtrado = df_negocios[
+        (df_negocios['Fecha_Filtro'].dt.date >= fecha_inicio)
+        & (df_negocios['Fecha_Filtro'].dt.date <= fecha_fin)
+        & (df_negocios['Propietario del negocio'].isin(asesores_seleccionados))
+        & (df_negocios['Etapa del negocio'].isin(etapas_seleccionadas))
+    ].copy()
+
+    group_neg_filtrado = (
+        df_negocios_filtrado.groupby('Etapa del negocio')['Valor']
+        .agg(['count', 'sum'])
+        .reset_index()
+    )
+    data_negocios_filtrado = []
+    for stage in etapas_seleccionadas:
+        row = group_neg_filtrado[group_neg_filtrado['Etapa del negocio'] == stage]
+        count = int(row['count'].iloc[0]) if not row.empty else 0
+        value = float(row['sum'].iloc[0]) if not row.empty else 0
+        data_negocios_filtrado.append({
+            "label": stage.upper(),
+            "count": count,
+            "val": format_currency_short(value),
+            "bg": stage_order_map[stage][0],
+            "order": stage_order_map[stage][1],
+        })
+    data_negocios_filtrado.sort(key=lambda item: item['order'])
+    total_negocios_filtrado = len(df_negocios_filtrado.dropna(subset=['ID de registro']))
+    valor_negocios_filtrado = format_currency_short(df_negocios_filtrado['Valor'].sum())
+
     st.markdown(f"""<div class="negocios-container" style="padding-bottom: 20px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; margin-bottom: 0;">
     <div class="negocios-title">Embudo de Negocios</div>
-    <div class="negocios-subtitle">{total_negocios_count} negocios · Valor total <span>{global_negocios_str}</span></div>
+    <div class="negocios-subtitle">{total_negocios_filtrado} negocios · Valor total <span>{valor_negocios_filtrado}</span></div>
 </div>""", unsafe_allow_html=True)
 
     # Render funnel layers wrapped with native buttons alongside
     st.markdown('<div style="background-color: #0b111a; padding: 0 40px; padding-bottom: 40px; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;">', unsafe_allow_html=True)
-    for i, item in enumerate(data_negocios):
+    for i, item in enumerate(data_negocios_filtrado):
         html_layer = f"""<div class="funnel-layer {item['bg']}" style="margin-bottom: 0;">
     <div class="layer-count-group">
         <div class="layer-label">{item['label']}</div>
@@ -523,7 +732,7 @@ def render_embudo_negocios():
         with c2:
             st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True) # Spacer vertical
             if st.button(f"🧾 Ver Info", key=f"btn_neg_{i}", use_container_width=True):
-                show_detalle_negocios(item['label'])
+                show_detalle_negocios(item['label'], df_negocios_filtrado)
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_dashboard_ejecutivo():
@@ -968,9 +1177,9 @@ def render_kpis_mercadeo():
     }
     .kpi-mkt-values {
         display: grid;
-        grid-template-columns: 100px 1fr 1fr 1fr 1fr 1fr 1fr;
-        gap: 20px;
-        align-items: center;
+        grid-template-columns: 92px repeat(5, minmax(0, 1fr));
+        gap: 12px;
+        align-items: stretch;
     }
     .kpi-mkt-box {
         text-align: center;
@@ -1014,6 +1223,165 @@ def render_kpis_mercadeo():
         color: #666;
         font-weight: 500;
     }
+    .kpi-month-card {
+        border: 1px solid #ebe6dc;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fff;
+        min-width: 0;
+        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+    .kpi-month-card:hover {
+        transform: translateY(-2px);
+        border-color: #d8c69f;
+        box-shadow: 0 8px 18px rgba(29,29,27,.08);
+    }
+    .kpi-month-name {
+        padding: 8px 10px;
+        background: #f5f1e9;
+        color: #6f6045;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .08em;
+        text-align: center;
+    }
+    .kpi-month-metrics {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+    .kpi-month-metric {
+        padding: 12px 6px;
+        text-align: center;
+        background: #e8f5e9;
+    }
+    .kpi-month-metric + .kpi-month-metric { border-left: 1px solid rgba(29,29,27,.08); }
+    .kpi-month-metric.porcentaje-alto { background: #c8e6c9; }
+    .kpi-month-metric.porcentaje-medio { background: #ffe082; }
+    .kpi-month-metric.porcentaje-bajo { background: #ef9a9a; }
+    .kpi-month-metric span {
+        display: block;
+        color: #6b6b67;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+    }
+    .kpi-month-metric strong {
+        color: #1D1D1B;
+        font-size: 21px;
+        line-height: 1;
+    }
+    .kpi-month-metric strong.pct-green { color: #2e7d32; }
+    .kpi-month-metric strong.pct-yellow { color: #f57c00; }
+    .kpi-month-metric strong.pct-red { color: #c62828; }
+    .kpi-month-detail {
+        display: block;
+        margin-top: 4px;
+        color: #73736f;
+        font-size: 9px;
+        font-weight: 600;
+    }
+    .kpi-billing-card {
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(135deg, #ffffff 0%, #fcfaf5 100%);
+    }
+    .kpi-billing-card::after {
+        content: "";
+        position: absolute;
+        width: 180px;
+        height: 180px;
+        right: -105px;
+        top: -110px;
+        border-radius: 50%;
+        background: rgba(199,171,114,.12);
+        pointer-events: none;
+        z-index: 0;
+    }
+    .kpi-billing-card > * { position: relative; z-index: 1; }
+    .kpi-billing-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        flex-wrap: wrap;
+    }
+    .kpi-audited-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 9px;
+        border-radius: 999px;
+        background: #e8f3e4;
+        color: #3f7131;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+    .kpi-billing-card .kpi-month-card.is-latest {
+        border-color: #C7AB72;
+        box-shadow: 0 6px 16px rgba(127,100,48,.14);
+    }
+    .kpi-billing-card .kpi-month-card.is-latest .kpi-month-name {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 6px;
+        background: #1D1D1B;
+        color: #fff;
+    }
+    .kpi-latest-badge {
+        padding: 2px 5px;
+        border-radius: 999px;
+        background: #C7AB72;
+        color: #1D1D1B;
+        font-size: 7px;
+        letter-spacing: .05em;
+    }
+    .kpi-billing-card .kpi-mkt-values {
+        grid-template-columns: 92px repeat(6, minmax(0, 1fr));
+        gap: 10px;
+    }
+    .kpi-billing-card .kpi-month-metric strong {
+        font-size: clamp(17px, 1.2vw, 21px);
+        white-space: nowrap;
+    }
+    .kpi-billing-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 13px;
+        padding-top: 12px;
+        border-top: 1px solid #eee8dc;
+    }
+    .kpi-billing-summary-item {
+        display: flex;
+        justify-content: center;
+        align-items: baseline;
+        gap: 7px;
+        color: #77716a;
+        font-size: 10px;
+        text-align: center;
+    }
+    .kpi-billing-summary-item strong {
+        color: #1D1D1B;
+        font-size: 13px;
+    }
+    .kpi-billing-summary-item strong.positive { color: #3f7f31; }
+    @media (max-width: 1050px) {
+        .kpi-mkt-values { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .kpi-billing-card .kpi-mkt-values { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 650px) {
+        .kpi-card-mkt { padding: 20px 14px; }
+        .kpi-mkt-header { gap: 8px; flex-wrap: wrap; }
+        .kpi-mkt-values { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+        .kpi-mkt-value { font-size: 23px; }
+        .kpi-month-metric strong { font-size: 17px; }
+        .kpi-billing-summary { grid-template-columns: 1fr; gap: 6px; }
+    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -1026,7 +1394,7 @@ def render_kpis_mercadeo():
                 <span style="color:#C7AB72;font-size:20px;">|</span>
                 <h2>KPI's MERCADEO</h2>
             </div>
-            <div class="subtitle">Medicion mensual con corte el ultimo viernes | Reporte a Gerencia Comercial | Periodo Mar-May 2026</div>
+            <div class="subtitle">Medición mensual con corte el último viernes | Reporte a Gerencia Comercial | Mar–Jul 2026 · Facturación con corte parcial Ago 2026</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1063,8 +1431,8 @@ def render_kpis_mercadeo():
     # Columna L (índice 11) = Mes (ahora contiene texto: marzo, abril, mayo)
     # Columna H (índice 7) = Etapa del lead = CALIFICACIÓN
     df_leads = df_leads_raw.copy()
-    leads_marzo = leads_abril = leads_mayo = 0
-    pct_marzo = pct_abril = pct_mayo = 0
+    leads_marzo = leads_abril = leads_mayo = leads_junio = leads_julio = 0
+    pct_marzo = pct_abril = pct_mayo = pct_junio = pct_julio = 0
     col_mes_leads = None
     col_calif = None
     
@@ -1081,6 +1449,8 @@ def render_kpis_mercadeo():
             leads_marzo = len(df_leads[df_leads[col_mes_leads] == 'marzo'])
             leads_abril = len(df_leads[df_leads[col_mes_leads] == 'abril'])
             leads_mayo = len(df_leads[df_leads[col_mes_leads] == 'mayo'])
+            leads_junio = len(df_leads[df_leads[col_mes_leads] == 'junio'])
+            leads_julio = len(df_leads[df_leads[col_mes_leads] == 'julio'])
             
             # Ajustar a 48 si da 47 para coincidir con el conteo de Excel
             if leads_mayo == 47:
@@ -1089,6 +1459,8 @@ def render_kpis_mercadeo():
             pct_marzo = (leads_marzo / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
             pct_abril = (leads_abril / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
             pct_mayo = (leads_mayo / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
+            pct_junio = (leads_junio / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
+            pct_julio = (leads_julio / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
     
     def get_pct_class(pct):
         if pct >= 100: return "porcentaje-alto", "pct-green"
@@ -1098,6 +1470,28 @@ def render_kpis_mercadeo():
     class_marzo, val_class_marzo = get_pct_class(pct_marzo)
     class_abril, val_class_abril = get_pct_class(pct_abril)
     class_mayo, val_class_mayo = get_pct_class(pct_mayo)
+    class_junio, val_class_junio = get_pct_class(pct_junio)
+    class_julio, val_class_julio = get_pct_class(pct_julio)
+
+    meses_leads = [
+        ("MAR", leads_marzo, pct_marzo, class_marzo, val_class_marzo),
+        ("ABR", leads_abril, pct_abril, class_abril, val_class_abril),
+        ("MAY", leads_mayo, pct_mayo, class_mayo, val_class_mayo),
+        ("JUN", leads_junio, pct_junio, class_junio, val_class_junio),
+        ("JUL", leads_julio, pct_julio, class_julio, val_class_julio),
+    ]
+    meses_leads_html = "".join(
+        f"""
+        <div class="kpi-month-card">
+            <div class="kpi-month-name">{mes}</div>
+            <div class="kpi-month-metrics">
+                <div class="kpi-month-metric"><span>Real</span><strong>{real}</strong></div>
+                <div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{pct:.0f}%</strong></div>
+            </div>
+        </div>
+        """
+        for mes, real, pct, pct_class, value_class in meses_leads
+    )
     
     st.markdown(f"""
     <div class="kpi-card-mkt">
@@ -1110,36 +1504,13 @@ def render_kpis_mercadeo():
                 <div class="kpi-mkt-label">Meta</div>
                 <div class="kpi-mkt-value">{METAS['leads']}</div>
             </div>
-            <div class="kpi-mkt-box real">
-                <div class="kpi-mkt-label">Mar Real</div>
-                <div class="kpi-mkt-value">{leads_marzo}</div>
-            </div>
-            <div class="kpi-mkt-box {class_marzo}">
-                <div class="kpi-mkt-label">Mar %</div>
-                <div class="kpi-mkt-value {val_class_marzo}">{pct_marzo:.0f}%</div>
-            </div>
-            <div class="kpi-mkt-box real">
-                <div class="kpi-mkt-label">Abr Real</div>
-                <div class="kpi-mkt-value">{leads_abril}</div>
-            </div>
-            <div class="kpi-mkt-box {class_abril}">
-                <div class="kpi-mkt-label">Abr %</div>
-                <div class="kpi-mkt-value {val_class_abril}">{pct_abril:.0f}%</div>
-            </div>
-            <div class="kpi-mkt-box real">
-                <div class="kpi-mkt-label">May Real</div>
-                <div class="kpi-mkt-value">{leads_mayo}</div>
-            </div>
-            <div class="kpi-mkt-box {class_mayo}">
-                <div class="kpi-mkt-label">May %</div>
-                <div class="kpi-mkt-value {val_class_mayo}">{pct_mayo:.0f}%</div>
-            </div>
+            {meses_leads_html}
         </div>
     </div>
     """, unsafe_allow_html=True)
     
     # Botones detalle Leads
-    c1, c2, c3, c_spacer = st.columns([1, 1, 1, 2])
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_leads_mar", use_container_width=True) and not df_leads.empty:
             df_mar_fil = df_leads[df_leads[col_mes_leads] == 'marzo'] if col_mes_leads else pd.DataFrame()
@@ -1152,15 +1523,29 @@ def render_kpis_mercadeo():
         if st.button("🔍 Ver detalle Mayo", key="btn_leads_may", use_container_width=True) and not df_leads.empty:
             df_may_fil = df_leads[df_leads[col_mes_leads] == 'mayo'] if col_mes_leads else pd.DataFrame()
             show_detalle_leads_mes("mayo", df_may_fil)
+    with c4:
+        if st.button("🔍 Ver detalle Junio", key="btn_leads_jun", use_container_width=True) and not df_leads.empty:
+            df_jun_fil = df_leads[df_leads[col_mes_leads] == 'junio'] if col_mes_leads else pd.DataFrame()
+            show_detalle_leads_mes("junio", df_jun_fil)
+    with c5:
+        if st.button("🔍 Ver detalle Julio", key="btn_leads_jul", use_container_width=True) and not df_leads.empty:
+            df_jul_fil = df_leads[df_leads[col_mes_leads] == 'julio'] if col_mes_leads else pd.DataFrame()
+            show_detalle_leads_mes("julio", df_jul_fil)
+
+    c_prop, c_prop_spacer = st.columns([1.2, 3.8])
+    with c_prop:
+        if st.button("📊 Propietarios Mayo", key="btn_leads_prop_may", use_container_width=True) and not df_leads.empty:
+            df_may_fil = df_leads[df_leads[col_mes_leads] == 'mayo'] if col_mes_leads else pd.DataFrame()
+            show_propietarios_leads_mayo(df_may_fil)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     # === INDICADOR 2: TASA CONVERSIÓN ===
     # Columna H (índice 7) = Etapa del lead
     # Un lead es "calificado" si contiene la palabra "calificado" o "calificada"
-    tasa_marzo = tasa_abril = tasa_mayo = 0
-    calif_marzo = calif_abril = calif_mayo = 0
-    total_marzo = total_abril = total_mayo = 0
+    tasa_marzo = tasa_abril = tasa_mayo = tasa_junio = tasa_julio = 0
+    calif_marzo = calif_abril = calif_mayo = calif_junio = calif_julio = 0
+    total_marzo = total_abril = total_mayo = total_junio = total_julio = 0
     
     if not df_leads.empty and col_mes_leads and col_calif:
         # Normalizar columna de calificación
@@ -1188,14 +1573,55 @@ def render_kpis_mercadeo():
         total_mayo = len(df_mayo)
         calif_mayo = len(df_mayo[df_mayo[col_calif].apply(es_calificado)])
         tasa_mayo = (calif_mayo / total_mayo * 100) if total_mayo > 0 else 0
+
+        # Junio
+        df_junio = df_leads[df_leads[col_mes_leads] == 'junio']
+        total_junio = len(df_junio)
+        calif_junio = len(df_junio[df_junio[col_calif].apply(es_calificado)])
+        tasa_junio = (calif_junio / total_junio * 100) if total_junio > 0 else 0
+
+        # Julio
+        df_julio = df_leads[df_leads[col_mes_leads] == 'julio']
+        total_julio = len(df_julio)
+        calif_julio = len(df_julio[df_julio[col_calif].apply(es_calificado)])
+        tasa_julio = (calif_julio / total_julio * 100) if total_julio > 0 else 0
     
     pct_tasa_marzo = (tasa_marzo / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
     pct_tasa_abril = (tasa_abril / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
     pct_tasa_mayo = (tasa_mayo / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
+    pct_tasa_junio = (tasa_junio / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
+    pct_tasa_julio = (tasa_julio / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
     
     class_tasa_marzo, val_class_tasa_marzo = get_pct_class(pct_tasa_marzo)
     class_tasa_abril, val_class_tasa_abril = get_pct_class(pct_tasa_abril)
     class_tasa_mayo, val_class_tasa_mayo = get_pct_class(pct_tasa_mayo)
+    class_tasa_junio, val_class_tasa_junio = get_pct_class(pct_tasa_junio)
+    class_tasa_julio, val_class_tasa_julio = get_pct_class(pct_tasa_julio)
+
+    meses_conversion = [
+        ("MAR", tasa_marzo, calif_marzo, total_marzo, pct_tasa_marzo, class_tasa_marzo, val_class_tasa_marzo),
+        ("ABR", tasa_abril, calif_abril, total_abril, pct_tasa_abril, class_tasa_abril, val_class_tasa_abril),
+        ("MAY", tasa_mayo, calif_mayo, total_mayo, pct_tasa_mayo, class_tasa_mayo, val_class_tasa_mayo),
+        ("JUN", tasa_junio, calif_junio, total_junio, pct_tasa_junio, class_tasa_junio, val_class_tasa_junio),
+        ("JUL", tasa_julio, calif_julio, total_julio, pct_tasa_julio, class_tasa_julio, val_class_tasa_julio),
+    ]
+    meses_conversion_html = "".join(
+        f"""
+        <div class="kpi-month-card">
+            <div class="kpi-month-name">{mes}</div>
+            <div class="kpi-month-metrics">
+                <div class="kpi-month-metric">
+                    <span>Real</span><strong>{tasa:.1f}%</strong>
+                    <small class="kpi-month-detail">{calificados}/{total}</small>
+                </div>
+                <div class="kpi-month-metric {pct_class}">
+                    <span>Cumpl.</span><strong class="{value_class}">{cumplimiento:.0f}%</strong>
+                </div>
+            </div>
+        </div>
+        """
+        for mes, tasa, calificados, total, cumplimiento, pct_class, value_class in meses_conversion
+    )
     
     st.markdown(f"""
     <div class="kpi-card-mkt">
@@ -1208,33 +1634,7 @@ def render_kpis_mercadeo():
                 <div class="kpi-mkt-label">Meta</div>
                 <div class="kpi-mkt-value">{METAS['tasa_conversion']}%</div>
             </div>
-            <div class="kpi-mkt-box real">
-                <div class="kpi-mkt-label">Mar Real</div>
-                <div class="kpi-mkt-value">{tasa_marzo:.1f}%</div>
-                <div class="kpi-mkt-trend">({calif_marzo}/{total_marzo})</div>
-            </div>
-            <div class="kpi-mkt-box {class_tasa_marzo}">
-                <div class="kpi-mkt-label">Mar %</div>
-                <div class="kpi-mkt-value {val_class_tasa_marzo}">{pct_tasa_marzo:.0f}%</div>
-            </div>
-            <div class="kpi-mkt-box real">
-                <div class="kpi-mkt-label">Abr Real</div>
-                <div class="kpi-mkt-value">{tasa_abril:.1f}%</div>
-                <div class="kpi-mkt-trend">({calif_abril}/{total_abril})</div>
-            </div>
-            <div class="kpi-mkt-box {class_tasa_abril}">
-                <div class="kpi-mkt-label">Abr %</div>
-                <div class="kpi-mkt-value {val_class_tasa_abril}">{pct_tasa_abril:.0f}%</div>
-            </div>
-            <div class="kpi-mkt-box real">
-                <div class="kpi-mkt-label">May Real</div>
-                <div class="kpi-mkt-value">{tasa_mayo:.1f}%</div>
-                <div class="kpi-mkt-trend">({calif_mayo}/{total_mayo})</div>
-            </div>
-            <div class="kpi-mkt-box {class_tasa_mayo}">
-                <div class="kpi-mkt-label">May %</div>
-                <div class="kpi-mkt-value {val_class_tasa_mayo}">{pct_tasa_mayo:.0f}%</div>
-            </div>
+            {meses_conversion_html}
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1244,7 +1644,7 @@ def render_kpis_mercadeo():
         val = str(val).lower()
         return 'calificado' in val and 'descalificado' not in val
     
-    c1, c2, c3, c_spacer = st.columns([1, 1, 1, 2])
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_conv_mar", use_container_width=True) and not df_leads.empty:
             df_mar_all = df_leads[df_leads[col_mes_leads] == 'marzo'] if col_mes_leads else pd.DataFrame()
@@ -1260,6 +1660,16 @@ def render_kpis_mercadeo():
             df_may_all = df_leads[df_leads[col_mes_leads] == 'mayo'] if col_mes_leads else pd.DataFrame()
             df_may_calif = df_may_all[df_may_all[col_calif].apply(es_calificado_check)] if col_calif and not df_may_all.empty else pd.DataFrame()
             show_detalle_conversion("mayo", calif_mayo, total_mayo, df_may_calif, df_may_all)
+    with c4:
+        if st.button("🔍 Ver detalle Junio", key="btn_conv_jun", use_container_width=True) and not df_leads.empty:
+            df_jun_all = df_leads[df_leads[col_mes_leads] == 'junio'] if col_mes_leads else pd.DataFrame()
+            df_jun_calif = df_jun_all[df_jun_all[col_calif].apply(es_calificado_check)] if col_calif and not df_jun_all.empty else pd.DataFrame()
+            show_detalle_conversion("junio", calif_junio, total_junio, df_jun_calif, df_jun_all)
+    with c5:
+        if st.button("🔍 Ver detalle Julio", key="btn_conv_jul", use_container_width=True) and not df_leads.empty:
+            df_jul_all = df_leads[df_leads[col_mes_leads] == 'julio'] if col_mes_leads else pd.DataFrame()
+            df_jul_calif = df_jul_all[df_jul_all[col_calif].apply(es_calificado_check)] if col_calif and not df_jul_all.empty else pd.DataFrame()
+            show_detalle_conversion("julio", calif_julio, total_julio, df_jul_calif, df_jul_all)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -1267,7 +1677,7 @@ def render_kpis_mercadeo():
     # Columna F (índice 5) = Valor
     # Columna G (índice 6) = Fecha de creación (contiene mes)
     df_cot = df_cotizaciones_raw.copy()
-    cot_marzo = cot_abril = cot_mayo = 0
+    cot_marzo = cot_abril = cot_mayo = cot_junio = cot_julio = 0
     
     if not df_cot.empty and len(df_cot.columns) >= 7:
         col_valor_cot = df_cot.columns[5]  # Columna F - Valor
@@ -1277,11 +1687,14 @@ def render_kpis_mercadeo():
         
         # Extraer mes de la fecha
         df_cot[col_fecha_cot] = pd.to_datetime(df_cot[col_fecha_cot], errors='coerce')
-        df_cot['mes_nombre'] = df_cot[col_fecha_cot].dt.strftime('%B').str.lower().str.replace('march', 'marzo').str.replace('april', 'abril').str.replace('may', 'mayo')
+        meses_es = {3: 'marzo', 4: 'abril', 5: 'mayo', 6: 'junio', 7: 'julio'}
+        df_cot['mes_nombre'] = df_cot[col_fecha_cot].dt.month.map(meses_es)
         
         cot_marzo = df_cot[df_cot['mes_nombre'] == 'marzo'][col_valor_cot].sum()
         cot_abril = df_cot[df_cot['mes_nombre'] == 'abril'][col_valor_cot].sum()
         cot_mayo = df_cot[df_cot['mes_nombre'] == 'mayo'][col_valor_cot].sum()
+        cot_junio = df_cot[df_cot['mes_nombre'] == 'junio'][col_valor_cot].sum()
+        cot_julio = df_cot[df_cot['mes_nombre'] == 'julio'][col_valor_cot].sum()
     
     def format_currency(val):
         if val >= 1_000_000_000:
@@ -1295,14 +1708,37 @@ def render_kpis_mercadeo():
     pct_cot_marzo = (cot_marzo / METAS["negocios_cotizados"]) * 100 if METAS["negocios_cotizados"] > 0 else 0
     pct_cot_abril = (cot_abril / METAS["negocios_cotizados"]) * 100 if METAS["negocios_cotizados"] > 0 else 0
     pct_cot_mayo = (cot_mayo / METAS["negocios_cotizados"]) * 100 if METAS["negocios_cotizados"] > 0 else 0
+    pct_cot_junio = (cot_junio / METAS["negocios_cotizados"]) * 100 if METAS["negocios_cotizados"] > 0 else 0
+    pct_cot_julio = (cot_julio / METAS["negocios_cotizados"]) * 100 if METAS["negocios_cotizados"] > 0 else 0
     
     class_cot_marzo, val_class_cot_marzo = get_pct_class(pct_cot_marzo)
     class_cot_abril, val_class_cot_abril = get_pct_class(pct_cot_abril)
     class_cot_mayo, val_class_cot_mayo = get_pct_class(pct_cot_mayo)
+    class_cot_junio, val_class_cot_junio = get_pct_class(pct_cot_junio)
+    class_cot_julio, val_class_cot_julio = get_pct_class(pct_cot_julio)
+
+    meses_cot = [
+        ("MAR", cot_marzo, pct_cot_marzo, class_cot_marzo, val_class_cot_marzo),
+        ("ABR", cot_abril, pct_cot_abril, class_cot_abril, val_class_cot_abril),
+        ("MAY", cot_mayo, pct_cot_mayo, class_cot_mayo, val_class_cot_mayo),
+        ("JUN", cot_junio, pct_cot_junio, class_cot_junio, val_class_cot_junio),
+        ("JUL", cot_julio, pct_cot_julio, class_cot_julio, val_class_cot_julio),
+    ]
+    meses_cot_html = "".join(
+        f"""
+        <div class="kpi-month-card">
+            <div class="kpi-month-name">{mes}</div>
+            <div class="kpi-month-metrics">
+                <div class="kpi-month-metric"><span>Real</span><strong>{format_currency(real)}</strong></div>
+                <div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{pct:.0f}%</strong></div>
+            </div>
+        </div>
+        """
+        for mes, real, pct, pct_class, value_class in meses_cot
+    )
     
     st.markdown(f"""
     <div class="kpi-card-mkt">
-        <div class="kpi-card-mkt">
         <div class="kpi-mkt-header">
             <div class="kpi-mkt-title">Negocios cotizados generados por mercadeo</div>
             <div class="kpi-mkt-meta">Meta mensual: {format_currency(METAS['negocios_cotizados'])}</div>
@@ -1312,36 +1748,13 @@ def render_kpis_mercadeo():
                 <div class="kpi-mkt-label">Meta</div>
                 <div class="kpi-mkt-value">{format_currency(METAS['negocios_cotizados'])}</div>
             </div>
-            <div class="kpi-mkt-box real">
-                <div class="kpi-mkt-label">Mar Real</div>
-                <div class="kpi-mkt-value">{format_currency(cot_marzo)}</div>
-            </div>
-            <div class="kpi-mkt-box {class_cot_marzo}">
-                <div class="kpi-mkt-label">Mar %</div>
-                <div class="kpi-mkt-value {val_class_cot_marzo}">{pct_cot_marzo:.0f}%</div>
-            </div>
-            <div class="kpi-mkt-box real">
-                <div class="kpi-mkt-label">Abr Real</div>
-                <div class="kpi-mkt-value">{format_currency(cot_abril)}</div>
-            </div>
-            <div class="kpi-mkt-box {class_cot_abril}">
-                <div class="kpi-mkt-label">Abr %</div>
-                <div class="kpi-mkt-value {val_class_cot_abril}">{pct_cot_abril:.0f}%</div>
-            </div>
-            <div class="kpi-mkt-box real">
-                <div class="kpi-mkt-label">May Real</div>
-                <div class="kpi-mkt-value">{format_currency(cot_mayo)}</div>
-            </div>
-            <div class="kpi-mkt-box {class_cot_mayo}">
-                <div class="kpi-mkt-label">May %</div>
-                <div class="kpi-mkt-value {val_class_cot_mayo}">{pct_cot_mayo:.0f}%</div>
-            </div>
+            {meses_cot_html}
         </div>
     </div>
     """, unsafe_allow_html=True)
     
     # Botones detalle Cotizaciones
-    c1, c2, c3, c_spacer = st.columns([1, 1, 1, 2])
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_cot_mar", use_container_width=True):
             # Filtrar cotizaciones de marzo por fecha
@@ -1366,26 +1779,67 @@ def render_kpis_mercadeo():
             else:
                 df_cot_may = df_cotizaciones_raw
             show_detalle_cotizaciones("mayo", cot_mayo, df_cot_may)
+    with c4:
+        if st.button("🔍 Ver detalle Junio", key="btn_cot_jun", use_container_width=True):
+            df_cot_jun = df_cot[df_cot['mes_nombre'] == 'junio'] if not df_cot.empty and 'mes_nombre' in df_cot.columns else df_cotizaciones_raw
+            show_detalle_cotizaciones("junio", cot_junio, df_cot_jun)
+    with c5:
+        if st.button("🔍 Ver detalle Julio", key="btn_cot_jul", use_container_width=True):
+            df_cot_jul = df_cot[df_cot['mes_nombre'] == 'julio'] if not df_cot.empty and 'mes_nombre' in df_cot.columns else df_cotizaciones_raw
+            show_detalle_cotizaciones("julio", cot_julio, df_cot_jul)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     # === INDICADOR 4: NEGOCIOS FACTURADOS ===
     df_fac = df_facturacion_raw.copy()
-    fac_marzo = fac_abril = fac_mayo = 0
-    col_marzo_fac = None
-    col_abril_fac = None
-    col_mayo_fac = None
+    fac_marzo = fac_abril = fac_mayo = fac_junio = fac_julio = fac_agosto = 0
+    col_marzo_fac = col_abril_fac = col_mayo_fac = col_junio_fac = col_julio_fac = col_agosto_fac = None
+
+    def limpiar_valor_facturacion(serie):
+        if pd.api.types.is_numeric_dtype(serie):
+            return pd.to_numeric(serie, errors='coerce').fillna(0)
+
+        def normalizar_moneda(valor):
+            texto = str(valor or '').strip().replace('$', '').replace(' ', '')
+            if texto in {'', '-', '--'}:
+                return 0.0
+            texto = re.sub(r'[^0-9,.-]', '', texto)
+            if ',' in texto and '.' in texto:
+                # El separador que aparece de último se interpreta como decimal.
+                if texto.rfind(',') > texto.rfind('.'):
+                    texto = texto.replace('.', '').replace(',', '.')
+                else:
+                    texto = texto.replace(',', '')
+            elif ',' in texto:
+                partes = texto.split(',')
+                texto = ''.join(partes) if len(partes[-1]) == 3 else texto.replace(',', '.')
+            elif texto.count('.') > 1:
+                texto = texto.replace('.', '')
+            elif texto.count('.') == 1 and len(texto.rsplit('.', 1)[1]) == 3:
+                texto = texto.replace('.', '')
+            try:
+                return float(texto)
+            except ValueError:
+                return 0.0
+
+        return serie.fillna('').apply(normalizar_moneda)
     
     if not df_fac.empty:
-        # Buscar columnas de marzo, abril y mayo por nombre
+        # Buscar columnas mensuales por nombre; la hoja usa abreviaturas como mar-26 y abr-26.
         for col in df_fac.columns:
-            col_lower = str(col).lower()
-            if any(x in col_lower for x in ['marzo', 'mar', 'march']):
+            col_lower = str(col).strip().lower()
+            if col_lower.startswith(('mar-26', 'marzo-26')):
                 col_marzo_fac = col
-            if any(x in col_lower for x in ['abril', 'abr', 'april']):
+            if col_lower.startswith(('abr-26', 'abrl-26', 'abril-26')):
                 col_abril_fac = col
-            if any(x in col_lower for x in ['mayo', 'may', 'mayo']):
+            if col_lower.startswith(('may-26', 'mayo-26')):
                 col_mayo_fac = col
+            if col_lower.startswith(('jun-26', 'junio-26')):
+                col_junio_fac = col
+            if col_lower.startswith(('jul-26', 'julio-26')):
+                col_julio_fac = col
+            if col_lower.startswith(('ago-26', 'agosto-26')):
+                col_agosto_fac = col
         
         # Fallback: usar posiciones L (11), M (12) y N (13) si no encontramos por nombre
         if col_marzo_fac is None and len(df_fac.columns) >= 12:
@@ -1394,67 +1848,98 @@ def render_kpis_mercadeo():
             col_abril_fac = df_fac.columns[12]
         if col_mayo_fac is None and len(df_fac.columns) >= 14:
             col_mayo_fac = df_fac.columns[13]
+        if col_junio_fac is None and len(df_fac.columns) >= 15:
+            col_junio_fac = df_fac.columns[14]
+        if col_julio_fac is None and len(df_fac.columns) >= 16:
+            col_julio_fac = df_fac.columns[15]
+        if col_agosto_fac is None and len(df_fac.columns) >= 17:
+            col_agosto_fac = df_fac.columns[16]
         
         # Calcular totales
         if col_marzo_fac:
-            df_fac[col_marzo_fac] = pd.to_numeric(df_fac[col_marzo_fac], errors='coerce').fillna(0)
+            df_fac[col_marzo_fac] = limpiar_valor_facturacion(df_fac[col_marzo_fac])
             fac_marzo = df_fac[col_marzo_fac].sum()
         if col_abril_fac:
-            df_fac[col_abril_fac] = pd.to_numeric(df_fac[col_abril_fac], errors='coerce').fillna(0)
+            df_fac[col_abril_fac] = limpiar_valor_facturacion(df_fac[col_abril_fac])
             fac_abril = df_fac[col_abril_fac].sum()
         if col_mayo_fac:
-            df_fac[col_mayo_fac] = pd.to_numeric(df_fac[col_mayo_fac], errors='coerce').fillna(0)
+            df_fac[col_mayo_fac] = limpiar_valor_facturacion(df_fac[col_mayo_fac])
             fac_mayo = df_fac[col_mayo_fac].sum()
+        if col_junio_fac:
+            df_fac[col_junio_fac] = limpiar_valor_facturacion(df_fac[col_junio_fac])
+            fac_junio = df_fac[col_junio_fac].sum()
+        if col_julio_fac:
+            df_fac[col_julio_fac] = limpiar_valor_facturacion(df_fac[col_julio_fac])
+            fac_julio = df_fac[col_julio_fac].sum()
+        if col_agosto_fac:
+            df_fac[col_agosto_fac] = limpiar_valor_facturacion(df_fac[col_agosto_fac])
+            fac_agosto = df_fac[col_agosto_fac].sum()
     
     pct_fac_marzo = (fac_marzo / METAS["negocios_facturados"]) * 100 if METAS["negocios_facturados"] > 0 else 0
     pct_fac_abril = (fac_abril / METAS["negocios_facturados"]) * 100 if METAS["negocios_facturados"] > 0 else 0
     pct_fac_mayo = (fac_mayo / METAS["negocios_facturados"]) * 100 if METAS["negocios_facturados"] > 0 else 0
+    pct_fac_junio = (fac_junio / METAS["negocios_facturados"]) * 100 if METAS["negocios_facturados"] > 0 else 0
+    pct_fac_julio = (fac_julio / METAS["negocios_facturados"]) * 100 if METAS["negocios_facturados"] > 0 else 0
+    pct_fac_agosto = (fac_agosto / METAS["negocios_facturados"]) * 100 if METAS["negocios_facturados"] > 0 else 0
     
     class_fac_marzo, val_class_fac_marzo = get_pct_class(pct_fac_marzo)
     class_fac_abril, val_class_fac_abril = get_pct_class(pct_fac_abril)
     class_fac_mayo, val_class_fac_mayo = get_pct_class(pct_fac_mayo)
+    class_fac_junio, val_class_fac_junio = get_pct_class(pct_fac_junio)
+    class_fac_julio, val_class_fac_julio = get_pct_class(pct_fac_julio)
+    class_fac_agosto, val_class_fac_agosto = get_pct_class(pct_fac_agosto)
+
+    meses_fac = [
+        ("MAR", fac_marzo, pct_fac_marzo, class_fac_marzo, val_class_fac_marzo, False),
+        ("ABR", fac_abril, pct_fac_abril, class_fac_abril, val_class_fac_abril, False),
+        ("MAY", fac_mayo, pct_fac_mayo, class_fac_mayo, val_class_fac_mayo, False),
+        ("JUN", fac_junio, pct_fac_junio, class_fac_junio, val_class_fac_junio, False),
+        ("JUL", fac_julio, pct_fac_julio, class_fac_julio, val_class_fac_julio, False),
+        ("AGO", fac_agosto, pct_fac_agosto, class_fac_agosto, val_class_fac_agosto, True),
+    ]
+    meses_fac_html = "".join(
+        f"""
+        <div class="kpi-month-card{' is-latest' if es_ultimo else ''}">
+            <div class="kpi-month-name">{mes}{'<span class="kpi-latest-badge">PARCIAL</span>' if es_ultimo else ''}</div>
+            <div class="kpi-month-metrics">
+                <div class="kpi-month-metric"><span>Real</span><strong>{format_currency(real)}</strong></div>
+                <div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{pct:.0f}%</strong></div>
+            </div>
+        </div>
+        """
+        for mes, real, pct, pct_class, value_class, es_ultimo in meses_fac
+    )
+
+    fac_periodo_total = sum(real for _, real, *_ in meses_fac)
+    fac_promedio = fac_periodo_total / len(meses_fac) if meses_fac else 0
+    variacion_fac_agosto = ((fac_agosto / fac_julio) - 1) * 100 if fac_julio else 0
     
     st.markdown(f"""
-    <div class="kpi-card-mkt">
+    <div class="kpi-card-mkt kpi-billing-card">
         <div class="kpi-mkt-header">
-            <div class="kpi-mkt-title">Negocios facturados atribuidos a mercadeo</div>
-            <div class="kpi-mkt-meta">Meta mensual: {format_currency(METAS['negocios_facturados'])}</div>
+            <div class="kpi-billing-title-wrap">
+                <div class="kpi-mkt-title">Negocios facturados atribuidos a mercadeo</div>
+                <span class="kpi-audited-badge">✓ Datos auditados</span>
+            </div>
+            <div class="kpi-mkt-meta">Agosto con corte parcial · Meta: {format_currency(METAS['negocios_facturados'])}</div>
         </div>
         <div class="kpi-mkt-values">
             <div class="kpi-mkt-box">
                 <div class="kpi-mkt-label">Meta</div>
                 <div class="kpi-mkt-value">{format_currency(METAS['negocios_facturados'])}</div>
             </div>
-            <div class="kpi-mkt-box real">
-                <div class="kpi-mkt-label">Mar Real</div>
-                <div class="kpi-mkt-value">{format_currency(fac_marzo)}</div>
-            </div>
-            <div class="kpi-mkt-box {class_fac_marzo}">
-                <div class="kpi-mkt-label">Mar %</div>
-                <div class="kpi-mkt-value {val_class_fac_marzo}">{pct_fac_marzo:.0f}%</div>
-            </div>
-            <div class="kpi-mkt-box real">
-                <div class="kpi-mkt-label">Abr Real</div>
-                <div class="kpi-mkt-value">{format_currency(fac_abril)}</div>
-            </div>
-            <div class="kpi-mkt-box {class_fac_abril}">
-                <div class="kpi-mkt-label">Abr %</div>
-                <div class="kpi-mkt-value {val_class_fac_abril}">{pct_fac_abril:.0f}%</div>
-            </div>
-            <div class="kpi-mkt-box real">
-                <div class="kpi-mkt-label">May Real</div>
-                <div class="kpi-mkt-value">{format_currency(fac_mayo)}</div>
-            </div>
-            <div class="kpi-mkt-box {class_fac_mayo}">
-                <div class="kpi-mkt-label">May %</div>
-                <div class="kpi-mkt-value {val_class_fac_mayo}">{pct_fac_mayo:.0f}%</div>
-            </div>
+            {meses_fac_html}
+        </div>
+        <div class="kpi-billing-summary">
+            <div class="kpi-billing-summary-item"><span>Total Mar–Ago</span><strong>{format_currency(fac_periodo_total)}</strong></div>
+            <div class="kpi-billing-summary-item"><span>Promedio mensual</span><strong>{format_currency(fac_promedio)}</strong></div>
+            <div class="kpi-billing-summary-item"><span>Ago parcial vs. Jul</span><strong class="{'positive' if variacion_fac_agosto >= 0 else ''}">{variacion_fac_agosto:+.0f}%</strong></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
     # Botones detalle Facturación
-    c1, c2, c3, c_spacer = st.columns([1, 1, 1, 2])
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_fac_mar", use_container_width=True):
             # Filtrar filas con valor en columna marzo
@@ -1479,6 +1964,18 @@ def render_kpis_mercadeo():
             else:
                 df_may_fac = df_facturacion_raw
             show_detalle_facturacion("mayo", fac_mayo, df_may_fac)
+    with c4:
+        if st.button("🔍 Ver detalle Junio", key="btn_fac_jun", use_container_width=True):
+            df_jun_fac = df_fac[df_fac[col_junio_fac] > 0] if col_junio_fac and not df_fac.empty else df_facturacion_raw
+            show_detalle_facturacion("junio", fac_junio, df_jun_fac)
+    with c5:
+        if st.button("🔍 Ver detalle Julio", key="btn_fac_jul", use_container_width=True):
+            df_jul_fac = df_fac[df_fac[col_julio_fac] > 0] if col_julio_fac and not df_fac.empty else df_facturacion_raw
+            show_detalle_facturacion("julio", fac_julio, df_jul_fac)
+    with c6:
+        if st.button("🔍 Ver detalle Agosto", key="btn_fac_ago", use_container_width=True):
+            df_ago_fac = df_fac[df_fac[col_agosto_fac] > 0] if col_agosto_fac and not df_fac.empty else df_facturacion_raw
+            show_detalle_facturacion("agosto (corte parcial)", fac_agosto, df_ago_fac)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -1520,6 +2017,89 @@ def show_detalle_facturacion(mes, total_valor, df_filtrado):
     st.write(f"**Valor Total Facturado:** ${total_valor:,.0f}")
     st.markdown("---")
     st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
+
+@st.dialog("👥 Propietarios de Leads - Mayo", width="large")
+def show_propietarios_leads_mayo(df_may_fil):
+    st.write("### Distribución de Leads por Propietario (Mayo)")
+    st.caption("Esta gráfica relaciona la cantidad de leads asignados a cada propietario durante el mes de Mayo.")
+    
+    # La columna O es la columna con índice 14
+    col_propietario = df_may_fil.columns[14] if len(df_may_fil.columns) >= 15 else 'propietario del lead'
+    
+    if col_propietario in df_may_fil.columns:
+        df_owners = df_may_fil.copy()
+        df_owners[col_propietario] = df_owners[col_propietario].fillna('').astype(str).str.strip()
+        
+        # Filtrar vacíos y NaN
+        df_grouped = df_owners[(df_owners[col_propietario] != '') & (df_owners[col_propietario].str.lower() != 'nan')].copy()
+        
+        # Agrupar y contar
+        df_counts = df_grouped[col_propietario].value_counts().reset_index()
+        df_counts.columns = ["Propietario", "Cantidad de Leads"]
+        
+        if not df_counts.empty:
+            # Gráfica horizontal súper estética usando Plotly Express
+            import plotly.express as px
+            df_counts = df_counts.sort_values(by="Cantidad de Leads", ascending=True)
+            
+            fig = px.bar(
+                df_counts,
+                x="Cantidad de Leads",
+                y="Propietario",
+                orientation="h",
+                text="Cantidad de Leads",
+                color="Cantidad de Leads",
+                color_continuous_scale=["#C7AB72", "#589642"], # Elegante paleta ditar (Kraft a Verde)
+            )
+            fig.update_layout(
+                xaxis_title="Leads Asignados",
+                yaxis_title="",
+                showlegend=False,
+                coloraxis_showscale=False,
+                margin=dict(l=20, r=20, t=20, b=20),
+                height=350,
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)"
+            )
+            fig.update_traces(textposition='outside', marker_line_color='#1D1D1B', marker_line_width=1)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.markdown("---")
+            
+            # Botón de detalle que los muestre
+            if "show_detail_owners" not in st.session_state:
+                st.session_state.show_detail_owners = False
+                
+            col_btn, _ = st.columns([1.5, 2])
+            with col_btn:
+                if st.button("🔍 Ver detalle de asignación", use_container_width=True, key="btn_toggle_owners_detail"):
+                    st.session_state.show_detail_owners = not st.session_state.show_detail_owners
+            
+            if st.session_state.show_detail_owners:
+                st.write("#### 📋 Listado Detallado de Leads y Propietarios")
+                
+                # Columnas recomendadas para mostrar
+                cols_to_show = ["Nombre del lead", df_grouped.columns[5], "Etapa del lead", col_propietario]
+                cols_to_show = [c for c in cols_to_show if c in df_grouped.columns]
+                if col_propietario not in cols_to_show:
+                    cols_to_show.append(col_propietario)
+                
+                # Limpiar nombres de columnas para mostrar
+                df_disp = df_grouped[cols_to_show].copy()
+                if len(df_disp.columns) > 1 and df_disp.columns[1] == df_grouped.columns[5]:
+                    df_disp.rename(columns={df_grouped.columns[5]: "Empresa"}, inplace=True)
+                
+                df_disp.columns = [c.capitalize() for c in df_disp.columns]
+                
+                st.dataframe(
+                    df_disp,
+                    use_container_width=True,
+                    hide_index=True
+                )
+        else:
+            st.warning("No se encontraron registros con propietarios válidos asignados en Mayo (Columna O).")
+    else:
+        st.error("No se encontró la columna de propietarios de leads en los datos.")
 
 def render_fidelizacion_roi():
     st.title("🤝 Fidelización y ROI")
