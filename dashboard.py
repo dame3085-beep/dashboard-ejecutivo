@@ -1481,15 +1481,12 @@ def render_kpis_mercadeo():
         ("JUL", leads_julio, pct_julio, class_julio, val_class_julio),
     ]
     meses_leads_html = "".join(
-        f"""
-        <div class="kpi-month-card">
-            <div class="kpi-month-name">{mes}</div>
-            <div class="kpi-month-metrics">
-                <div class="kpi-month-metric"><span>Real</span><strong>{real}</strong></div>
-                <div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{pct:.0f}%</strong></div>
-            </div>
-        </div>
-        """
+        f'<div class="kpi-month-card">'
+        f'<div class="kpi-month-name">{mes}</div>'
+        f'<div class="kpi-month-metrics">'
+        f'<div class="kpi-month-metric"><span>Real</span><strong>{real}</strong></div>'
+        f'<div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{pct:.0f}%</strong></div>'
+        f'</div></div>'
         for mes, real, pct, pct_class, value_class in meses_leads
     )
     
@@ -1606,20 +1603,14 @@ def render_kpis_mercadeo():
         ("JUL", tasa_julio, calif_julio, total_julio, pct_tasa_julio, class_tasa_julio, val_class_tasa_julio),
     ]
     meses_conversion_html = "".join(
-        f"""
-        <div class="kpi-month-card">
-            <div class="kpi-month-name">{mes}</div>
-            <div class="kpi-month-metrics">
-                <div class="kpi-month-metric">
-                    <span>Real</span><strong>{tasa:.1f}%</strong>
-                    <small class="kpi-month-detail">{calificados}/{total}</small>
-                </div>
-                <div class="kpi-month-metric {pct_class}">
-                    <span>Cumpl.</span><strong class="{value_class}">{cumplimiento:.0f}%</strong>
-                </div>
-            </div>
-        </div>
-        """
+        f'<div class="kpi-month-card">'
+        f'<div class="kpi-month-name">{mes}</div>'
+        f'<div class="kpi-month-metrics">'
+        f'<div class="kpi-month-metric"><span>Real</span><strong>{tasa:.1f}%</strong>'
+        f'<small class="kpi-month-detail">{calificados}/{total}</small></div>'
+        f'<div class="kpi-month-metric {pct_class}"><span>Cumpl.</span>'
+        f'<strong class="{value_class}">{cumplimiento:.0f}%</strong></div>'
+        f'</div></div>'
         for mes, tasa, calificados, total, cumplimiento, pct_class, value_class in meses_conversion
     )
     
@@ -1725,15 +1716,12 @@ def render_kpis_mercadeo():
         ("JUL", cot_julio, pct_cot_julio, class_cot_julio, val_class_cot_julio),
     ]
     meses_cot_html = "".join(
-        f"""
-        <div class="kpi-month-card">
-            <div class="kpi-month-name">{mes}</div>
-            <div class="kpi-month-metrics">
-                <div class="kpi-month-metric"><span>Real</span><strong>{format_currency(real)}</strong></div>
-                <div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{pct:.0f}%</strong></div>
-            </div>
-        </div>
-        """
+        f'<div class="kpi-month-card">'
+        f'<div class="kpi-month-name">{mes}</div>'
+        f'<div class="kpi-month-metrics">'
+        f'<div class="kpi-month-metric"><span>Real</span><strong>{format_currency(real)}</strong></div>'
+        f'<div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{pct:.0f}%</strong></div>'
+        f'</div></div>'
         for mes, real, pct, pct_class, value_class in meses_cot
     )
     
@@ -1898,15 +1886,16 @@ def render_kpis_mercadeo():
         ("AGO", fac_agosto, pct_fac_agosto, class_fac_agosto, val_class_fac_agosto, True),
     ]
     meses_fac_html = "".join(
-        f"""
-        <div class="kpi-month-card{' is-latest' if es_ultimo else ''}">
-            <div class="kpi-month-name">{mes}{'<span class="kpi-latest-badge">PARCIAL</span>' if es_ultimo else ''}</div>
-            <div class="kpi-month-metrics">
-                <div class="kpi-month-metric"><span>Real</span><strong>{format_currency(real)}</strong></div>
-                <div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{pct:.0f}%</strong></div>
-            </div>
-        </div>
-        """
+        (
+            '<div class="kpi-month-card' + (' is-latest' if es_ultimo else '') + '">'
+            f'<div class="kpi-month-name">{mes}'
+            + ('<span class="kpi-latest-badge">PARCIAL</span>' if es_ultimo else '')
+            + '</div>'
+            + '<div class="kpi-month-metrics">'
+            + f'<div class="kpi-month-metric"><span>Real</span><strong>{format_currency(real)}</strong></div>'
+            + f'<div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{pct:.0f}%</strong></div>'
+            + '</div></div>'
+        )
         for mes, real, pct, pct_class, value_class, es_ultimo in meses_fac
     )
 
