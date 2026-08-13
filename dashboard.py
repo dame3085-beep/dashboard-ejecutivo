@@ -1529,12 +1529,6 @@ def render_kpis_mercadeo():
             df_jul_fil = df_leads[df_leads[col_mes_leads] == 'julio'] if col_mes_leads else pd.DataFrame()
             show_detalle_leads_mes("julio", df_jul_fil)
 
-    c_prop, c_prop_spacer = st.columns([1.2, 3.8])
-    with c_prop:
-        if st.button("📊 Propietarios Mayo", key="btn_leads_prop_may", use_container_width=True) and not df_leads.empty:
-            df_may_fil = df_leads[df_leads[col_mes_leads] == 'mayo'] if col_mes_leads else pd.DataFrame()
-            show_propietarios_leads_mayo(df_may_fil)
-    
     st.markdown("<br>", unsafe_allow_html=True)
     
     # === INDICADOR 2: TASA CONVERSIÓN ===
@@ -2006,89 +2000,6 @@ def show_detalle_facturacion(mes, total_valor, df_filtrado):
     st.write(f"**Valor Total Facturado:** ${total_valor:,.0f}")
     st.markdown("---")
     st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
-
-@st.dialog("👥 Propietarios de Leads - Mayo", width="large")
-def show_propietarios_leads_mayo(df_may_fil):
-    st.write("### Distribución de Leads por Propietario (Mayo)")
-    st.caption("Esta gráfica relaciona la cantidad de leads asignados a cada propietario durante el mes de Mayo.")
-    
-    # La columna O es la columna con índice 14
-    col_propietario = df_may_fil.columns[14] if len(df_may_fil.columns) >= 15 else 'propietario del lead'
-    
-    if col_propietario in df_may_fil.columns:
-        df_owners = df_may_fil.copy()
-        df_owners[col_propietario] = df_owners[col_propietario].fillna('').astype(str).str.strip()
-        
-        # Filtrar vacíos y NaN
-        df_grouped = df_owners[(df_owners[col_propietario] != '') & (df_owners[col_propietario].str.lower() != 'nan')].copy()
-        
-        # Agrupar y contar
-        df_counts = df_grouped[col_propietario].value_counts().reset_index()
-        df_counts.columns = ["Propietario", "Cantidad de Leads"]
-        
-        if not df_counts.empty:
-            # Gráfica horizontal súper estética usando Plotly Express
-            import plotly.express as px
-            df_counts = df_counts.sort_values(by="Cantidad de Leads", ascending=True)
-            
-            fig = px.bar(
-                df_counts,
-                x="Cantidad de Leads",
-                y="Propietario",
-                orientation="h",
-                text="Cantidad de Leads",
-                color="Cantidad de Leads",
-                color_continuous_scale=["#C7AB72", "#589642"], # Elegante paleta ditar (Kraft a Verde)
-            )
-            fig.update_layout(
-                xaxis_title="Leads Asignados",
-                yaxis_title="",
-                showlegend=False,
-                coloraxis_showscale=False,
-                margin=dict(l=20, r=20, t=20, b=20),
-                height=350,
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)"
-            )
-            fig.update_traces(textposition='outside', marker_line_color='#1D1D1B', marker_line_width=1)
-            st.plotly_chart(fig, use_container_width=True)
-            
-            st.markdown("---")
-            
-            # Botón de detalle que los muestre
-            if "show_detail_owners" not in st.session_state:
-                st.session_state.show_detail_owners = False
-                
-            col_btn, _ = st.columns([1.5, 2])
-            with col_btn:
-                if st.button("🔍 Ver detalle de asignación", use_container_width=True, key="btn_toggle_owners_detail"):
-                    st.session_state.show_detail_owners = not st.session_state.show_detail_owners
-            
-            if st.session_state.show_detail_owners:
-                st.write("#### 📋 Listado Detallado de Leads y Propietarios")
-                
-                # Columnas recomendadas para mostrar
-                cols_to_show = ["Nombre del lead", df_grouped.columns[5], "Etapa del lead", col_propietario]
-                cols_to_show = [c for c in cols_to_show if c in df_grouped.columns]
-                if col_propietario not in cols_to_show:
-                    cols_to_show.append(col_propietario)
-                
-                # Limpiar nombres de columnas para mostrar
-                df_disp = df_grouped[cols_to_show].copy()
-                if len(df_disp.columns) > 1 and df_disp.columns[1] == df_grouped.columns[5]:
-                    df_disp.rename(columns={df_grouped.columns[5]: "Empresa"}, inplace=True)
-                
-                df_disp.columns = [c.capitalize() for c in df_disp.columns]
-                
-                st.dataframe(
-                    df_disp,
-                    use_container_width=True,
-                    hide_index=True
-                )
-        else:
-            st.warning("No se encontraron registros con propietarios válidos asignados en Mayo (Columna O).")
-    else:
-        st.error("No se encontró la columna de propietarios de leads en los datos.")
 
 def render_fidelizacion_roi():
     st.title("🤝 Fidelización y ROI")
