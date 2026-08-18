@@ -2031,18 +2031,12 @@ def main():
         </div>
         """, unsafe_allow_html=True)
         
-        page = st.radio("Navegación", ["Dashboard Ejecutivo", "KPIs Mercadeo", "GESTIÓN DE CONTACTOS", "Manychat", "Fidelización y ROI"])
+        page = st.radio("Navegación", ["Dashboard Ejecutivo", "KPIs Mercadeo"])
         
     if page == "Dashboard Ejecutivo":
         render_dashboard_ejecutivo()
-    elif page == "KPIs Mercadeo":
-        render_kpis_mercadeo()
-    elif page == "GESTIÓN DE CONTACTOS":
-        render_gestion_contactos()
-    elif page == "Manychat":
-        render_manychat_stats()
     else:
-        render_fidelizacion_roi()
+        render_kpis_mercadeo()
 
 if __name__ == "__main__":
     main()
