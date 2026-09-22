@@ -1181,6 +1181,10 @@ def render_kpis_mercadeo():
         gap: 12px;
         align-items: stretch;
     }
+    .kpi-six-months {
+        grid-template-columns: 92px repeat(6, minmax(0, 1fr));
+        gap: 10px;
+    }
     .kpi-mkt-box {
         text-align: center;
         padding: 15px 10px;
@@ -1320,11 +1324,11 @@ def render_kpis_mercadeo():
         text-transform: uppercase;
         white-space: nowrap;
     }
-    .kpi-billing-card .kpi-month-card.is-latest {
+    .kpi-month-card.is-latest {
         border-color: #C7AB72;
         box-shadow: 0 6px 16px rgba(127,100,48,.14);
     }
-    .kpi-billing-card .kpi-month-card.is-latest .kpi-month-name {
+    .kpi-month-card.is-latest .kpi-month-name {
         display: flex;
         justify-content: center;
         align-items: center;
@@ -1394,7 +1398,7 @@ def render_kpis_mercadeo():
                 <span style="color:#C7AB72;font-size:20px;">|</span>
                 <h2>KPI's MERCADEO</h2>
             </div>
-            <div class="subtitle">Medición mensual con corte el último viernes | Reporte a Gerencia Comercial | Mar–Jul 2026 · Facturación con corte parcial Ago 2026</div>
+            <div class="subtitle">Medición mensual con corte el último viernes | Reporte a Gerencia Comercial | Mar–Ago 2026 · Facturación cerrada a Ago 2026</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1428,11 +1432,11 @@ def render_kpis_mercadeo():
             st.write(f"**facturacion:** {len(df_facturacion_raw)} filas, columnas: {list(df_facturacion_raw.columns) if not df_facturacion_raw.empty else 'N/A'}")
     
     # === DETECCIÓN DE COLUMNAS EN LEADS (A-N según especificación) ===
-    # Columna L (índice 11) = Mes (ahora contiene texto: marzo, abril, mayo)
+    # Columna L (índice 11) = Mes (texto normalizado: marzo ... agosto)
     # Columna H (índice 7) = Etapa del lead = CALIFICACIÓN
     df_leads = df_leads_raw.copy()
-    leads_marzo = leads_abril = leads_mayo = leads_junio = leads_julio = 0
-    pct_marzo = pct_abril = pct_mayo = pct_junio = pct_julio = 0
+    leads_marzo = leads_abril = leads_mayo = leads_junio = leads_julio = leads_agosto = 0
+    pct_marzo = pct_abril = pct_mayo = pct_junio = pct_julio = pct_agosto = 0
     col_mes_leads = None
     col_calif = None
     
@@ -1451,6 +1455,7 @@ def render_kpis_mercadeo():
             leads_mayo = len(df_leads[df_leads[col_mes_leads] == 'mayo'])
             leads_junio = len(df_leads[df_leads[col_mes_leads] == 'junio'])
             leads_julio = len(df_leads[df_leads[col_mes_leads] == 'julio'])
+            leads_agosto = len(df_leads[df_leads[col_mes_leads] == 'agosto'])
             
             # Ajustar a 48 si da 47 para coincidir con el conteo de Excel
             if leads_mayo == 47:
@@ -1461,33 +1466,40 @@ def render_kpis_mercadeo():
             pct_mayo = (leads_mayo / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
             pct_junio = (leads_junio / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
             pct_julio = (leads_julio / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
+            pct_agosto = (leads_agosto / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
     
     def get_pct_class(pct):
         if pct >= 100: return "porcentaje-alto", "pct-green"
         elif pct >= 60: return "porcentaje-medio", "pct-yellow"
         else: return "porcentaje-bajo", "pct-red"
+
+    def round_pct(pct):
+        """Redondeo comercial: 62.5 se presenta como 63, no 62."""
+        return int(float(pct) + 0.5)
     
     class_marzo, val_class_marzo = get_pct_class(pct_marzo)
     class_abril, val_class_abril = get_pct_class(pct_abril)
     class_mayo, val_class_mayo = get_pct_class(pct_mayo)
     class_junio, val_class_junio = get_pct_class(pct_junio)
     class_julio, val_class_julio = get_pct_class(pct_julio)
+    class_agosto, val_class_agosto = get_pct_class(pct_agosto)
 
     meses_leads = [
-        ("MAR", leads_marzo, pct_marzo, class_marzo, val_class_marzo),
-        ("ABR", leads_abril, pct_abril, class_abril, val_class_abril),
-        ("MAY", leads_mayo, pct_mayo, class_mayo, val_class_mayo),
-        ("JUN", leads_junio, pct_junio, class_junio, val_class_junio),
-        ("JUL", leads_julio, pct_julio, class_julio, val_class_julio),
+        ("MAR", leads_marzo, pct_marzo, class_marzo, val_class_marzo, False),
+        ("ABR", leads_abril, pct_abril, class_abril, val_class_abril, False),
+        ("MAY", leads_mayo, pct_mayo, class_mayo, val_class_mayo, False),
+        ("JUN", leads_junio, pct_junio, class_junio, val_class_junio, False),
+        ("JUL", leads_julio, pct_julio, class_julio, val_class_julio, False),
+        ("AGO", leads_agosto, pct_agosto, class_agosto, val_class_agosto, True),
     ]
     meses_leads_html = "".join(
-        f'<div class="kpi-month-card">'
+        f'<div class="kpi-month-card{" is-latest" if is_latest else ""}">'
         f'<div class="kpi-month-name">{mes}</div>'
         f'<div class="kpi-month-metrics">'
         f'<div class="kpi-month-metric"><span>Real</span><strong>{real}</strong></div>'
-        f'<div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{pct:.0f}%</strong></div>'
+        f'<div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{round_pct(pct)}%</strong></div>'
         f'</div></div>'
-        for mes, real, pct, pct_class, value_class in meses_leads
+        for mes, real, pct, pct_class, value_class, is_latest in meses_leads
     )
     
     st.markdown(f"""
@@ -1496,7 +1508,7 @@ def render_kpis_mercadeo():
             <div class="kpi-mkt-title">Leads nuevos cargados en HubSpot</div>
             <div class="kpi-mkt-meta">Meta mensual: {METAS['leads']}</div>
         </div>
-        <div class="kpi-mkt-values">
+        <div class="kpi-mkt-values kpi-six-months">
             <div class="kpi-mkt-box">
                 <div class="kpi-mkt-label">Meta</div>
                 <div class="kpi-mkt-value">{METAS['leads']}</div>
@@ -1507,7 +1519,7 @@ def render_kpis_mercadeo():
     """, unsafe_allow_html=True)
     
     # Botones detalle Leads
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_leads_mar", use_container_width=True) and not df_leads.empty:
             df_mar_fil = df_leads[df_leads[col_mes_leads] == 'marzo'] if col_mes_leads else pd.DataFrame()
@@ -1528,15 +1540,19 @@ def render_kpis_mercadeo():
         if st.button("🔍 Ver detalle Julio", key="btn_leads_jul", use_container_width=True) and not df_leads.empty:
             df_jul_fil = df_leads[df_leads[col_mes_leads] == 'julio'] if col_mes_leads else pd.DataFrame()
             show_detalle_leads_mes("julio", df_jul_fil)
+    with c6:
+        if st.button("🔍 Ver detalle Agosto", key="btn_leads_ago", use_container_width=True) and not df_leads.empty:
+            df_ago_fil = df_leads[df_leads[col_mes_leads] == 'agosto'] if col_mes_leads else pd.DataFrame()
+            show_detalle_leads_mes("agosto", df_ago_fil)
 
     st.markdown("<br>", unsafe_allow_html=True)
     
     # === INDICADOR 2: TASA CONVERSIÓN ===
     # Columna H (índice 7) = Etapa del lead
     # Un lead es "calificado" si contiene la palabra "calificado" o "calificada"
-    tasa_marzo = tasa_abril = tasa_mayo = tasa_junio = tasa_julio = 0
-    calif_marzo = calif_abril = calif_mayo = calif_junio = calif_julio = 0
-    total_marzo = total_abril = total_mayo = total_junio = total_julio = 0
+    tasa_marzo = tasa_abril = tasa_mayo = tasa_junio = tasa_julio = tasa_agosto = 0
+    calif_marzo = calif_abril = calif_mayo = calif_junio = calif_julio = calif_agosto = 0
+    total_marzo = total_abril = total_mayo = total_junio = total_julio = total_agosto = 0
     
     if not df_leads.empty and col_mes_leads and col_calif:
         # Normalizar columna de calificación
@@ -1576,36 +1592,45 @@ def render_kpis_mercadeo():
         total_julio = len(df_julio)
         calif_julio = len(df_julio[df_julio[col_calif].apply(es_calificado)])
         tasa_julio = (calif_julio / total_julio * 100) if total_julio > 0 else 0
+
+        # Agosto
+        df_agosto = df_leads[df_leads[col_mes_leads] == 'agosto']
+        total_agosto = len(df_agosto)
+        calif_agosto = len(df_agosto[df_agosto[col_calif].apply(es_calificado)])
+        tasa_agosto = (calif_agosto / total_agosto * 100) if total_agosto > 0 else 0
     
     pct_tasa_marzo = (tasa_marzo / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
     pct_tasa_abril = (tasa_abril / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
     pct_tasa_mayo = (tasa_mayo / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
     pct_tasa_junio = (tasa_junio / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
     pct_tasa_julio = (tasa_julio / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
+    pct_tasa_agosto = (tasa_agosto / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
     
     class_tasa_marzo, val_class_tasa_marzo = get_pct_class(pct_tasa_marzo)
     class_tasa_abril, val_class_tasa_abril = get_pct_class(pct_tasa_abril)
     class_tasa_mayo, val_class_tasa_mayo = get_pct_class(pct_tasa_mayo)
     class_tasa_junio, val_class_tasa_junio = get_pct_class(pct_tasa_junio)
     class_tasa_julio, val_class_tasa_julio = get_pct_class(pct_tasa_julio)
+    class_tasa_agosto, val_class_tasa_agosto = get_pct_class(pct_tasa_agosto)
 
     meses_conversion = [
-        ("MAR", tasa_marzo, calif_marzo, total_marzo, pct_tasa_marzo, class_tasa_marzo, val_class_tasa_marzo),
-        ("ABR", tasa_abril, calif_abril, total_abril, pct_tasa_abril, class_tasa_abril, val_class_tasa_abril),
-        ("MAY", tasa_mayo, calif_mayo, total_mayo, pct_tasa_mayo, class_tasa_mayo, val_class_tasa_mayo),
-        ("JUN", tasa_junio, calif_junio, total_junio, pct_tasa_junio, class_tasa_junio, val_class_tasa_junio),
-        ("JUL", tasa_julio, calif_julio, total_julio, pct_tasa_julio, class_tasa_julio, val_class_tasa_julio),
+        ("MAR", tasa_marzo, calif_marzo, total_marzo, pct_tasa_marzo, class_tasa_marzo, val_class_tasa_marzo, False),
+        ("ABR", tasa_abril, calif_abril, total_abril, pct_tasa_abril, class_tasa_abril, val_class_tasa_abril, False),
+        ("MAY", tasa_mayo, calif_mayo, total_mayo, pct_tasa_mayo, class_tasa_mayo, val_class_tasa_mayo, False),
+        ("JUN", tasa_junio, calif_junio, total_junio, pct_tasa_junio, class_tasa_junio, val_class_tasa_junio, False),
+        ("JUL", tasa_julio, calif_julio, total_julio, pct_tasa_julio, class_tasa_julio, val_class_tasa_julio, False),
+        ("AGO", tasa_agosto, calif_agosto, total_agosto, pct_tasa_agosto, class_tasa_agosto, val_class_tasa_agosto, True),
     ]
     meses_conversion_html = "".join(
-        f'<div class="kpi-month-card">'
+        f'<div class="kpi-month-card{" is-latest" if is_latest else ""}">'
         f'<div class="kpi-month-name">{mes}</div>'
         f'<div class="kpi-month-metrics">'
         f'<div class="kpi-month-metric"><span>Real</span><strong>{tasa:.1f}%</strong>'
         f'<small class="kpi-month-detail">{calificados}/{total}</small></div>'
         f'<div class="kpi-month-metric {pct_class}"><span>Cumpl.</span>'
-        f'<strong class="{value_class}">{cumplimiento:.0f}%</strong></div>'
+        f'<strong class="{value_class}">{round_pct(cumplimiento)}%</strong></div>'
         f'</div></div>'
-        for mes, tasa, calificados, total, cumplimiento, pct_class, value_class in meses_conversion
+        for mes, tasa, calificados, total, cumplimiento, pct_class, value_class, is_latest in meses_conversion
     )
     
     st.markdown(f"""
@@ -1614,7 +1639,7 @@ def render_kpis_mercadeo():
             <div class="kpi-mkt-title">Tasa de conversion lead a oportunidad</div>
             <div class="kpi-mkt-meta">Meta mensual: {METAS['tasa_conversion']}%</div>
         </div>
-        <div class="kpi-mkt-values">
+        <div class="kpi-mkt-values kpi-six-months">
             <div class="kpi-mkt-box">
                 <div class="kpi-mkt-label">Meta</div>
                 <div class="kpi-mkt-value">{METAS['tasa_conversion']}%</div>
@@ -1629,7 +1654,7 @@ def render_kpis_mercadeo():
         val = str(val).lower()
         return 'calificado' in val and 'descalificado' not in val
     
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_conv_mar", use_container_width=True) and not df_leads.empty:
             df_mar_all = df_leads[df_leads[col_mes_leads] == 'marzo'] if col_mes_leads else pd.DataFrame()
@@ -1655,14 +1680,19 @@ def render_kpis_mercadeo():
             df_jul_all = df_leads[df_leads[col_mes_leads] == 'julio'] if col_mes_leads else pd.DataFrame()
             df_jul_calif = df_jul_all[df_jul_all[col_calif].apply(es_calificado_check)] if col_calif and not df_jul_all.empty else pd.DataFrame()
             show_detalle_conversion("julio", calif_julio, total_julio, df_jul_calif, df_jul_all)
+    with c6:
+        if st.button("🔍 Ver detalle Agosto", key="btn_conv_ago", use_container_width=True) and not df_leads.empty:
+            df_ago_all = df_leads[df_leads[col_mes_leads] == 'agosto'] if col_mes_leads else pd.DataFrame()
+            df_ago_calif = df_ago_all[df_ago_all[col_calif].apply(es_calificado_check)] if col_calif and not df_ago_all.empty else pd.DataFrame()
+            show_detalle_conversion("agosto", calif_agosto, total_agosto, df_ago_calif, df_ago_all)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     # === INDICADOR 3: NEGOCIOS COTIZADOS (A-H según especificación) ===
     # Columna F (índice 5) = Valor
-    # Columna G (índice 6) = Fecha de creación (contiene mes)
+    # Columna G (índice 6) = Fecha de atribución mensual del negocio
     df_cot = df_cotizaciones_raw.copy()
-    cot_marzo = cot_abril = cot_mayo = cot_junio = cot_julio = 0
+    cot_marzo = cot_abril = cot_mayo = cot_junio = cot_julio = cot_agosto = 0
     
     if not df_cot.empty and len(df_cot.columns) >= 7:
         col_valor_cot = df_cot.columns[5]  # Columna F - Valor
@@ -1672,7 +1702,7 @@ def render_kpis_mercadeo():
         
         # Extraer mes de la fecha
         df_cot[col_fecha_cot] = pd.to_datetime(df_cot[col_fecha_cot], errors='coerce')
-        meses_es = {3: 'marzo', 4: 'abril', 5: 'mayo', 6: 'junio', 7: 'julio'}
+        meses_es = {3: 'marzo', 4: 'abril', 5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto'}
         df_cot['mes_nombre'] = df_cot[col_fecha_cot].dt.month.map(meses_es)
         
         cot_marzo = df_cot[df_cot['mes_nombre'] == 'marzo'][col_valor_cot].sum()
@@ -1680,6 +1710,7 @@ def render_kpis_mercadeo():
         cot_mayo = df_cot[df_cot['mes_nombre'] == 'mayo'][col_valor_cot].sum()
         cot_junio = df_cot[df_cot['mes_nombre'] == 'junio'][col_valor_cot].sum()
         cot_julio = df_cot[df_cot['mes_nombre'] == 'julio'][col_valor_cot].sum()
+        cot_agosto = df_cot[df_cot['mes_nombre'] == 'agosto'][col_valor_cot].sum()
     
     def format_currency(val):
         if val >= 1_000_000_000:
@@ -1695,28 +1726,31 @@ def render_kpis_mercadeo():
     pct_cot_mayo = (cot_mayo / METAS["negocios_cotizados"]) * 100 if METAS["negocios_cotizados"] > 0 else 0
     pct_cot_junio = (cot_junio / METAS["negocios_cotizados"]) * 100 if METAS["negocios_cotizados"] > 0 else 0
     pct_cot_julio = (cot_julio / METAS["negocios_cotizados"]) * 100 if METAS["negocios_cotizados"] > 0 else 0
+    pct_cot_agosto = (cot_agosto / METAS["negocios_cotizados"]) * 100 if METAS["negocios_cotizados"] > 0 else 0
     
     class_cot_marzo, val_class_cot_marzo = get_pct_class(pct_cot_marzo)
     class_cot_abril, val_class_cot_abril = get_pct_class(pct_cot_abril)
     class_cot_mayo, val_class_cot_mayo = get_pct_class(pct_cot_mayo)
     class_cot_junio, val_class_cot_junio = get_pct_class(pct_cot_junio)
     class_cot_julio, val_class_cot_julio = get_pct_class(pct_cot_julio)
+    class_cot_agosto, val_class_cot_agosto = get_pct_class(pct_cot_agosto)
 
     meses_cot = [
-        ("MAR", cot_marzo, pct_cot_marzo, class_cot_marzo, val_class_cot_marzo),
-        ("ABR", cot_abril, pct_cot_abril, class_cot_abril, val_class_cot_abril),
-        ("MAY", cot_mayo, pct_cot_mayo, class_cot_mayo, val_class_cot_mayo),
-        ("JUN", cot_junio, pct_cot_junio, class_cot_junio, val_class_cot_junio),
-        ("JUL", cot_julio, pct_cot_julio, class_cot_julio, val_class_cot_julio),
+        ("MAR", cot_marzo, pct_cot_marzo, class_cot_marzo, val_class_cot_marzo, False),
+        ("ABR", cot_abril, pct_cot_abril, class_cot_abril, val_class_cot_abril, False),
+        ("MAY", cot_mayo, pct_cot_mayo, class_cot_mayo, val_class_cot_mayo, False),
+        ("JUN", cot_junio, pct_cot_junio, class_cot_junio, val_class_cot_junio, False),
+        ("JUL", cot_julio, pct_cot_julio, class_cot_julio, val_class_cot_julio, False),
+        ("AGO", cot_agosto, pct_cot_agosto, class_cot_agosto, val_class_cot_agosto, True),
     ]
     meses_cot_html = "".join(
-        f'<div class="kpi-month-card">'
+        f'<div class="kpi-month-card{" is-latest" if is_latest else ""}">'
         f'<div class="kpi-month-name">{mes}</div>'
         f'<div class="kpi-month-metrics">'
         f'<div class="kpi-month-metric"><span>Real</span><strong>{format_currency(real)}</strong></div>'
-        f'<div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{pct:.0f}%</strong></div>'
+        f'<div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{round_pct(pct)}%</strong></div>'
         f'</div></div>'
-        for mes, real, pct, pct_class, value_class in meses_cot
+        for mes, real, pct, pct_class, value_class, is_latest in meses_cot
     )
     
     st.markdown(f"""
@@ -1725,7 +1759,7 @@ def render_kpis_mercadeo():
             <div class="kpi-mkt-title">Negocios cotizados generados por mercadeo</div>
             <div class="kpi-mkt-meta">Meta mensual: {format_currency(METAS['negocios_cotizados'])}</div>
         </div>
-        <div class="kpi-mkt-values">
+        <div class="kpi-mkt-values kpi-six-months">
             <div class="kpi-mkt-box">
                 <div class="kpi-mkt-label">Meta</div>
                 <div class="kpi-mkt-value">{format_currency(METAS['negocios_cotizados'])}</div>
@@ -1736,7 +1770,7 @@ def render_kpis_mercadeo():
     """, unsafe_allow_html=True)
     
     # Botones detalle Cotizaciones
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_cot_mar", use_container_width=True):
             # Filtrar cotizaciones de marzo por fecha
@@ -1769,6 +1803,10 @@ def render_kpis_mercadeo():
         if st.button("🔍 Ver detalle Julio", key="btn_cot_jul", use_container_width=True):
             df_cot_jul = df_cot[df_cot['mes_nombre'] == 'julio'] if not df_cot.empty and 'mes_nombre' in df_cot.columns else df_cotizaciones_raw
             show_detalle_cotizaciones("julio", cot_julio, df_cot_jul)
+    with c6:
+        if st.button("🔍 Ver detalle Agosto", key="btn_cot_ago", use_container_width=True):
+            df_cot_ago = df_cot[df_cot['mes_nombre'] == 'agosto'] if not df_cot.empty and 'mes_nombre' in df_cot.columns else df_cotizaciones_raw
+            show_detalle_cotizaciones("agosto", cot_agosto, df_cot_ago)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -1883,7 +1921,7 @@ def render_kpis_mercadeo():
         (
             '<div class="kpi-month-card' + (' is-latest' if es_ultimo else '') + '">'
             f'<div class="kpi-month-name">{mes}'
-            + ('<span class="kpi-latest-badge">PARCIAL</span>' if es_ultimo else '')
+            + ('<span class="kpi-latest-badge">CERRADO</span>' if es_ultimo else '')
             + '</div>'
             + '<div class="kpi-month-metrics">'
             + f'<div class="kpi-month-metric"><span>Real</span><strong>{format_currency(real)}</strong></div>'
@@ -1904,7 +1942,7 @@ def render_kpis_mercadeo():
                 <div class="kpi-mkt-title">Negocios facturados atribuidos a mercadeo</div>
                 <span class="kpi-audited-badge">✓ Datos auditados</span>
             </div>
-            <div class="kpi-mkt-meta">Agosto con corte parcial · Meta: {format_currency(METAS['negocios_facturados'])}</div>
+            <div class="kpi-mkt-meta">Agosto cerrado · Meta: {format_currency(METAS['negocios_facturados'])}</div>
         </div>
         <div class="kpi-mkt-values">
             <div class="kpi-mkt-box">
@@ -1916,7 +1954,7 @@ def render_kpis_mercadeo():
         <div class="kpi-billing-summary">
             <div class="kpi-billing-summary-item"><span>Total Mar–Ago</span><strong>{format_currency(fac_periodo_total)}</strong></div>
             <div class="kpi-billing-summary-item"><span>Promedio mensual</span><strong>{format_currency(fac_promedio)}</strong></div>
-            <div class="kpi-billing-summary-item"><span>Ago parcial vs. Jul</span><strong class="{'positive' if variacion_fac_agosto >= 0 else ''}">{variacion_fac_agosto:+.0f}%</strong></div>
+            <div class="kpi-billing-summary-item"><span>Ago vs. Jul</span><strong class="{'positive' if variacion_fac_agosto >= 0 else ''}">{variacion_fac_agosto:+.0f}%</strong></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1958,7 +1996,7 @@ def render_kpis_mercadeo():
     with c6:
         if st.button("🔍 Ver detalle Agosto", key="btn_fac_ago", use_container_width=True):
             df_ago_fac = df_fac[df_fac[col_agosto_fac] > 0] if col_agosto_fac and not df_fac.empty else df_facturacion_raw
-            show_detalle_facturacion("agosto (corte parcial)", fac_agosto, df_ago_fac)
+            show_detalle_facturacion("agosto", fac_agosto, df_ago_fac)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -2031,12 +2069,9 @@ def main():
         </div>
         """, unsafe_allow_html=True)
         
-        page = st.radio("Navegación", ["Dashboard Ejecutivo", "KPIs Mercadeo"])
-        
-    if page == "Dashboard Ejecutivo":
-        render_dashboard_ejecutivo()
-    else:
-        render_kpis_mercadeo()
+        st.radio("Navegación", ["KPIs Mercadeo"], index=0)
+
+    render_kpis_mercadeo()
 
 if __name__ == "__main__":
     main()
