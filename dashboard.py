@@ -3,26 +3,161 @@ import textwrap
 import pandas as pd
 import re
 import time
+import unicodedata
 
-# Audited September 2026 close. Aggregated snapshot avoids local PII files
-# and prevents double counting if Google Sheets later includes the same month.
-KPI_SEPTIEMBRE_2026 = {
-    "periodo": "2026-09",
-    "fecha_corte": "2026-11-03",
-    "leads": 54,
-    "leads_calificados": 29,
-    "etapas_lead": {"Calificado": 29, "Descalificado": 24, "Nuevo": 1},
-    "propietarios_lead": {"Angie Paola Trujillo Garavito": 54},
-    "negocios": 24,
-    "negocios_con_valor": 10,
-    "valor_cotizado": 174_390_260.0,
-    "origenes_negocio": {"Manychat": 14, "Página web": 7, "Llamadas": 3, "Prospección mercadeo": 0},
-    "empresas_facturadas": 10,
-    "documentos_facturacion": 30,
-    "lineas_facturacion": 48,
-    "valor_facturado": 116_085_200.0,
-    "fuente": "Cierre auditado con HubSpot y facturación SQL DITARSA (1–30 sep. 2026; valores cotizados revalidados el 3 nov. 2026)",
+KPI_YEAR = 2026
+KPI_MONTH_NAMES = {
+    3: "marzo", 4: "abril", 5: "mayo", 6: "junio",
+    7: "julio", 8: "agosto", 9: "septiembre",
 }
+KPI_SHEETS_URL = "https://docs.google.com/spreadsheets/d/1AQ9KX-gUW9VcSC3PypbsESPi_YZ939i_CBgVrft2xko/edit"
+KPI_SHEET_IDS = {"LEADS": 1368127647, "COTIZACIONES": 116166388, "FACTURACION": 1076419284}
+# Historical total expressly retained by the user; do not fabricate a source row.
+KPI_LEAD_TOTAL_OVERRIDES = {"mayo": 48}
+
+
+def kpi_text(value):
+    if value is None or pd.isna(value):
+        return ""
+    return "".join(ch for ch in unicodedata.normalize("NFKD", str(value).strip().lower())
+                   if not unicodedata.combining(ch))
+
+
+def kpi_column(frame, *names):
+    columns = {kpi_text(column): column for column in frame.columns}
+    return next((columns[kpi_text(name)] for name in names if kpi_text(name) in columns), None)
+
+
+def kpi_date(value):
+    if value is None or pd.isna(value) or value == "":
+        return pd.NaT
+    if isinstance(value, (int, float)):
+        return pd.to_datetime(value, unit="D", origin="1899-12-30", errors="coerce")
+    parsed = pd.to_datetime(value, errors="coerce", dayfirst=not bool(re.match(r"^\d{4}-\d{2}-\d{2}", str(value))))
+    if pd.notna(parsed) and parsed.tzinfo is not None:
+        return parsed.tz_convert("America/Bogota").tz_localize(None)
+    return parsed
+
+
+def kpi_month(value):
+    text = kpi_text(value)
+    for month, name in KPI_MONTH_NAMES.items():
+        if text == name:
+            # Historical LEADS stores the attributed month as Spanish text.
+            return name
+    date = kpi_date(value)
+    return KPI_MONTH_NAMES.get(date.month, "") if pd.notna(date) and date.year == KPI_YEAR else ""
+
+
+def kpi_qualified(value):
+    return kpi_text(value) in {"calificado", "calificada", "qualified"}
+
+
+def kpi_lead_total(month, frame):
+    if frame.empty:
+        return 0
+    return max(len(frame), KPI_LEAD_TOTAL_OVERRIDES.get(kpi_text(month), 0))
+
+
+def kpi_amount(value):
+    if value is None or pd.isna(value) or str(value).strip() in {"", "-", "--", "$ -"}:
+        return float("nan")
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = re.sub(r"[^0-9,.-]", "", str(value))
+    if "," in text and "." in text:
+        text = text.replace(".", "").replace(",", ".") if text.rfind(",") > text.rfind(".") else text.replace(",", "")
+    elif "," in text:
+        text = text.replace(",", "") if len(text.rsplit(",", 1)[1]) == 3 else text.replace(",", ".")
+    elif text.count(".") > 1 or ("." in text and len(text.rsplit(".", 1)[1]) == 3):
+        text = text.replace(".", "")
+    number = pd.to_numeric(text, errors="coerce")
+    return -abs(number) if re.search(r"\([^)]*\d[^)]*\)", str(value)) else number
+
+
+def kpi_leads(frame):
+    result = frame.copy()
+    month_col = kpi_column(result, "Fecha de asignación al propietario", "Mes")
+    if month_col is not None:
+        result[month_col] = result[month_col].map(kpi_month)
+    return result
+
+
+def kpi_quotes(frame):
+    result = frame.copy()
+    date_col = kpi_column(result, "Fecha de atribución", "Fecha de creación")
+    value_col = kpi_column(result, "Valor")
+    result["mes_nombre"] = ""
+    if value_col is not None:
+        result[value_col] = result[value_col].map(kpi_amount)
+    if date_col is not None:
+        result[date_col] = result[date_col].map(kpi_date)
+        result["mes_nombre"] = result[date_col].map(
+            lambda date: KPI_MONTH_NAMES.get(date.month, "") if pd.notna(date) and date.year == KPI_YEAR else ""
+        )
+    return result
+
+
+def kpi_billing_detail(frame, value_col):
+    if value_col is None or value_col not in frame.columns:
+        return pd.DataFrame(columns=["Razón social", "Marca", "Valor facturado (COP)"])
+    name_col = kpi_column(frame, "RAZON SOCIAL", "Razón social")
+    brand_col = kpi_column(frame, "MARCA", "Marca")
+    amounts = frame[value_col].map(kpi_amount).fillna(0)
+    result = pd.DataFrame({
+        "Razón social": frame[name_col].fillna("") if name_col is not None else "",
+        "Marca": frame[brand_col].fillna("") if brand_col is not None else "",
+        "Valor facturado (COP)": amounts,
+    })
+    return result.loc[amounts.ne(0)].copy()
+
+
+def kpi_cop(value):
+    return "$" + f"{value:,.0f}".replace(",", ".")
+
+
+def kpi_record_id(value):
+    if value is None or pd.isna(value):
+        return ""
+    text = str(value).strip()
+    return text[:-2] if text.endswith(".0") else text
+
+
+def kpi_records_table(frame, object_type=None):
+    result = frame.drop(columns=["mes_nombre", "propietario del lead"], errors="ignore").copy()
+    for column in result.columns:
+        label = kpi_text(column)
+        if re.search(r"\bids?\b", label):
+            # IDs are labels, not numbers; keep mixed Excel/text IDs Arrow-safe.
+            result[column] = result[column].map(kpi_record_id)
+        elif label not in {"valor", "valor facturado (cop)"}:
+            # Descriptive fields can mix text and numeric association IDs in Sheets.
+            result[column] = result[column].map(
+                lambda value: "" if pd.isna(value) else str(value)
+            )
+    # Column L is a month label in the source; label it honestly in the detail.
+    if object_type == "0-136":
+        result = result.rename(columns={"Fecha de asignación al propietario": "Mes de atribución"})
+    elif object_type == "0-3":
+        result = result.rename(columns={"Fecha de creación": "Fecha de atribución", "Origen Empresa": "Origen de negocio"})
+    record_col = kpi_column(result, "ID de registro")
+    config = {}
+    if object_type and record_col is not None:
+        def record_link(value):
+            record_id = kpi_record_id(value)
+            if not record_id.isdigit():
+                return None
+            return f"https://app.hubspot.com/contacts/50182138/record/{object_type}/{record_id}?utm_source=dashboard&utm_medium=detail"
+        result["HubSpot"] = result[record_col].map(record_link)
+        config["HubSpot"] = st.column_config.LinkColumn("HubSpot", display_text="Abrir ↗")
+    for column in ("Valor", "Valor facturado (COP)"):
+        if column in result.columns:
+            config[column] = st.column_config.NumberColumn(column, format="$ %.2f")
+    st.dataframe(result, column_config=config, width="stretch", hide_index=True)
+
+
+def kpi_source_link(sheet):
+    st.link_button("Abrir fuente en Google Sheets", f"{KPI_SHEETS_URL}#gid={KPI_SHEET_IDS[sheet]}")
 
 # ==== CONFIGURACIÓN DE PÁGINA ====
 st.set_page_config(page_title="Dashboard Directivo", layout="wide", initial_sidebar_state="expanded")
@@ -221,9 +356,9 @@ def load_data():
         except:
             continue
     
-    # Hoja FACTURACIÓN (mayúsculas con tilde - la última hoja)
+    # Consolidado KPI: preferir FACTURACION, no la pestaña histórica Facturación.
     df_facturacion = pd.DataFrame()
-    for nombre in ["FACTURACIÓN", "FACTURACION", "Facturación", "Facturacion", "facturación", "facturacion"]:
+    for nombre in ["FACTURACION", "FACTURACIÓN", "Facturacion", "Facturación", "facturacion", "facturación"]:
         try:
             df_facturacion = pd.read_excel(xls, sheet_name=nombre)
             break
@@ -237,14 +372,9 @@ def load_data():
             f"gviz/tq?tqx=out:csv&sheet=FACTURACION&cachebust={time.time_ns()}"
         )
         df_facturacion_live = pd.read_csv(facturacion_url)
-        facturacion_cols = [
-            "RAZON SOCIAL", "MARCA", "jun-25", "jul-25", "ago-25", "sep-25", "oct-25", "nov-25",
-            "dic-25", "ene-26", "feb-26", "mar-26", "abr-26", "may-26", "jun-26", "jul-26", "ago-26", "sep-26",
-        ]
-        if len(df_facturacion_live.columns) >= 17:
-            columnas_disponibles = min(len(df_facturacion_live.columns), len(facturacion_cols))
-            df_facturacion_live = df_facturacion_live.iloc[:, :columnas_disponibles]
-            df_facturacion_live.columns = facturacion_cols[:columnas_disponibles]
+        if (kpi_column(df_facturacion_live, "RAZON SOCIAL") is not None
+                and any(re.fullmatch(r"(?:mar|abr|may|jun|jul|ago|sep)-26", kpi_text(col))
+                        for col in df_facturacion_live.columns)):
             df_facturacion = df_facturacion_live
     except Exception:
         pass
@@ -1135,7 +1265,7 @@ def render_kpis_mercadeo():
     
     col_hz1, col_hz2 = st.columns([4, 1])
     with col_hz1:
-        st.write("Histórico desde Google Sheets · Septiembre auditado con HubSpot y SQL DITARSA")
+        st.write("Datos desde Google Sheets · Detalle mensual de leads, cotizaciones y facturación")
     with col_hz2:
         if st.button("🔄 Forzar Recarga", use_container_width=True, key="reload_mercadeo"):
             st.cache_data.clear()
@@ -1427,10 +1557,10 @@ def render_kpis_mercadeo():
     st.markdown("<br>", unsafe_allow_html=True)
     
     # === DIAGNÓSTICO AUTOMÁTICO ===
-    hay_problema = df_leads_raw.empty and df_cotizaciones_raw.empty and df_facturacion_raw.empty
+    hay_problema = df_leads_raw.empty or df_cotizaciones_raw.empty or df_facturacion_raw.empty
     
     if hay_problema:
-        st.error("⚠️ **No se encontraron datos en las hojas LEADS, cotizaciones o facturacion**")
+        st.error("⚠️ **Faltan datos en una o más hojas: LEADS, COTIZACIONES o FACTURACION**")
         st.write("**Hojas disponibles en el archivo Google Sheets:**")
         st.code(sheet_names_available)
         st.write("**Buscando hojas con nombres similares...**")
@@ -1452,36 +1582,30 @@ def render_kpis_mercadeo():
             st.write(f"**cotizaciones:** {len(df_cotizaciones_raw)} filas, columnas: {list(df_cotizaciones_raw.columns) if not df_cotizaciones_raw.empty else 'N/A'}")
             st.write(f"**facturacion:** {len(df_facturacion_raw)} filas, columnas: {list(df_facturacion_raw.columns) if not df_facturacion_raw.empty else 'N/A'}")
     
-    # === DETECCIÓN DE COLUMNAS EN LEADS (A-N según especificación) ===
-    # Columna L (índice 11) = Mes (texto normalizado: marzo ... agosto)
+    # === DETECCIÓN DE COLUMNAS EN LEADS ===
+    # Columna L = mes de atribución; conservar la atribución histórica de ferias.
     # Columna H (índice 7) = Etapa del lead = CALIFICACIÓN
-    df_leads = df_leads_raw.copy()
+    df_leads = kpi_leads(df_leads_raw)
     leads_marzo = leads_abril = leads_mayo = leads_junio = leads_julio = leads_agosto = 0
-    leads_septiembre = KPI_SEPTIEMBRE_2026["leads"]
+    leads_septiembre = 0
     pct_marzo = pct_abril = pct_mayo = pct_junio = pct_julio = pct_agosto = 0
     col_mes_leads = None
     col_calif = None
     
     if not df_leads.empty:
-        # Usar índices exactos: L=11 (mes), H=7 (calificación)
-        if len(df_leads.columns) >= 12:
-            col_mes_leads = df_leads.columns[11]  # Columna L - Mes
-        if len(df_leads.columns) >= 8:
-            col_calif = df_leads.columns[7]  # Columna H - Etapa del lead
+        col_mes_leads = kpi_column(df_leads, "Fecha de asignación al propietario", "Mes")
+        col_calif = kpi_column(df_leads, "Etapa del lead")
         
         # Calcular leads por mes
         if col_mes_leads:
             df_leads[col_mes_leads] = df_leads[col_mes_leads].fillna('').astype(str).str.strip().str.lower()
             leads_marzo = len(df_leads[df_leads[col_mes_leads] == 'marzo'])
             leads_abril = len(df_leads[df_leads[col_mes_leads] == 'abril'])
-            leads_mayo = len(df_leads[df_leads[col_mes_leads] == 'mayo'])
+            leads_mayo = kpi_lead_total("mayo", df_leads[df_leads[col_mes_leads] == 'mayo'])
             leads_junio = len(df_leads[df_leads[col_mes_leads] == 'junio'])
             leads_julio = len(df_leads[df_leads[col_mes_leads] == 'julio'])
             leads_agosto = len(df_leads[df_leads[col_mes_leads] == 'agosto'])
-            
-            # Ajustar a 48 si da 47 para coincidir con el conteo de Excel
-            if leads_mayo == 47:
-                leads_mayo = 48
+            leads_septiembre = len(df_leads[df_leads[col_mes_leads] == 'septiembre'])
                 
             pct_marzo = (leads_marzo / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
             pct_abril = (leads_abril / METAS["leads"]) * 100 if METAS["leads"] > 0 else 0
@@ -1547,53 +1671,47 @@ def render_kpis_mercadeo():
     # Botones detalle Leads
     c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
     with c1:
-        if st.button("🔍 Ver detalle Marzo", key="btn_leads_mar", use_container_width=True) and not df_leads.empty:
+        if st.button("🔍 Ver detalle Marzo", key="btn_leads_mar", use_container_width=True):
             df_mar_fil = df_leads[df_leads[col_mes_leads] == 'marzo'] if col_mes_leads else pd.DataFrame()
             show_detalle_leads_mes("marzo", df_mar_fil)
     with c2:
-        if st.button("🔍 Ver detalle Abril", key="btn_leads_abr", use_container_width=True) and not df_leads.empty:
+        if st.button("🔍 Ver detalle Abril", key="btn_leads_abr", use_container_width=True):
             df_abr_fil = df_leads[df_leads[col_mes_leads] == 'abril'] if col_mes_leads else pd.DataFrame()
             show_detalle_leads_mes("abril", df_abr_fil)
     with c3:
-        if st.button("🔍 Ver detalle Mayo", key="btn_leads_may", use_container_width=True) and not df_leads.empty:
+        if st.button("🔍 Ver detalle Mayo", key="btn_leads_may", use_container_width=True):
             df_may_fil = df_leads[df_leads[col_mes_leads] == 'mayo'] if col_mes_leads else pd.DataFrame()
             show_detalle_leads_mes("mayo", df_may_fil)
     with c4:
-        if st.button("🔍 Ver detalle Junio", key="btn_leads_jun", use_container_width=True) and not df_leads.empty:
+        if st.button("🔍 Ver detalle Junio", key="btn_leads_jun", use_container_width=True):
             df_jun_fil = df_leads[df_leads[col_mes_leads] == 'junio'] if col_mes_leads else pd.DataFrame()
             show_detalle_leads_mes("junio", df_jun_fil)
     with c5:
-        if st.button("🔍 Ver detalle Julio", key="btn_leads_jul", use_container_width=True) and not df_leads.empty:
+        if st.button("🔍 Ver detalle Julio", key="btn_leads_jul", use_container_width=True):
             df_jul_fil = df_leads[df_leads[col_mes_leads] == 'julio'] if col_mes_leads else pd.DataFrame()
             show_detalle_leads_mes("julio", df_jul_fil)
     with c6:
-        if st.button("🔍 Ver detalle Agosto", key="btn_leads_ago", use_container_width=True) and not df_leads.empty:
+        if st.button("🔍 Ver detalle Agosto", key="btn_leads_ago", use_container_width=True):
             df_ago_fil = df_leads[df_leads[col_mes_leads] == 'agosto'] if col_mes_leads else pd.DataFrame()
             show_detalle_leads_mes("agosto", df_ago_fil)
     with c7:
         if st.button("🔍 Ver detalle Septiembre", key="btn_leads_sep", use_container_width=True):
-            show_detalle_septiembre("leads")
+            df_sep_fil = df_leads[df_leads[col_mes_leads] == 'septiembre'] if col_mes_leads else pd.DataFrame()
+            show_detalle_leads_mes("septiembre", df_sep_fil)
 
     st.markdown("<br>", unsafe_allow_html=True)
     
     # === INDICADOR 2: TASA CONVERSIÓN ===
     # Columna H (índice 7) = Etapa del lead
-    # Un lead es "calificado" si contiene la palabra "calificado" o "calificada"
+    # Coincidencia exacta: "Descalificado" no cuenta como "Calificado".
     tasa_marzo = tasa_abril = tasa_mayo = tasa_junio = tasa_julio = tasa_agosto = 0
     calif_marzo = calif_abril = calif_mayo = calif_junio = calif_julio = calif_agosto = 0
     total_marzo = total_abril = total_mayo = total_junio = total_julio = total_agosto = 0
-    calif_septiembre = KPI_SEPTIEMBRE_2026["leads_calificados"]
-    total_septiembre = KPI_SEPTIEMBRE_2026["leads"]
-    tasa_septiembre = (calif_septiembre / total_septiembre * 100) if total_septiembre > 0 else 0
+    calif_septiembre = total_septiembre = tasa_septiembre = 0
     
     if not df_leads.empty and col_mes_leads and col_calif:
-        # Normalizar columna de calificación
-        df_leads[col_calif] = df_leads[col_calif].fillna('').astype(str).str.strip().str.lower()
-        
-        # Función para detectar si es calificado (solo "calificado", NO "descalificado")
         def es_calificado(val):
-            val = str(val).lower()
-            return 'calificado' in val and 'descalificado' not in val
+            return kpi_qualified(val)
         
         # Marzo
         df_marzo = df_leads[df_leads[col_mes_leads] == 'marzo']
@@ -1630,6 +1748,11 @@ def render_kpis_mercadeo():
         total_agosto = len(df_agosto)
         calif_agosto = len(df_agosto[df_agosto[col_calif].apply(es_calificado)])
         tasa_agosto = (calif_agosto / total_agosto * 100) if total_agosto > 0 else 0
+
+        df_septiembre = df_leads[df_leads[col_mes_leads] == 'septiembre']
+        total_septiembre = len(df_septiembre)
+        calif_septiembre = len(df_septiembre[df_septiembre[col_calif].apply(es_calificado)])
+        tasa_septiembre = (calif_septiembre / total_septiembre * 100) if total_septiembre > 0 else 0
     
     pct_tasa_marzo = (tasa_marzo / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
     pct_tasa_abril = (tasa_abril / METAS["tasa_conversion"]) * 100 if METAS["tasa_conversion"] > 0 else 0
@@ -1685,64 +1808,47 @@ def render_kpis_mercadeo():
     """, unsafe_allow_html=True)
     
     # Botones detalle Conversión
-    def es_calificado_check(val):
-        val = str(val).lower()
-        return 'calificado' in val and 'descalificado' not in val
-    
     c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
     with c1:
-        if st.button("🔍 Ver detalle Marzo", key="btn_conv_mar", use_container_width=True) and not df_leads.empty:
+        if st.button("🔍 Ver detalle Marzo", key="btn_conv_mar", use_container_width=True):
             df_mar_all = df_leads[df_leads[col_mes_leads] == 'marzo'] if col_mes_leads else pd.DataFrame()
-            df_mar_calif = df_mar_all[df_mar_all[col_calif].apply(es_calificado_check)] if col_calif and not df_mar_all.empty else pd.DataFrame()
-            show_detalle_conversion("marzo", calif_marzo, total_marzo, df_mar_calif, df_mar_all)
+            show_detalle_conversion("marzo", df_mar_all)
     with c2:
-        if st.button("🔍 Ver detalle Abril", key="btn_conv_abr", use_container_width=True) and not df_leads.empty:
+        if st.button("🔍 Ver detalle Abril", key="btn_conv_abr", use_container_width=True):
             df_abr_all = df_leads[df_leads[col_mes_leads] == 'abril'] if col_mes_leads else pd.DataFrame()
-            df_abr_calif = df_abr_all[df_abr_all[col_calif].apply(es_calificado_check)] if col_calif and not df_abr_all.empty else pd.DataFrame()
-            show_detalle_conversion("abril", calif_abril, total_abril, df_abr_calif, df_abr_all)
+            show_detalle_conversion("abril", df_abr_all)
     with c3:
-        if st.button("🔍 Ver detalle Mayo", key="btn_conv_may", use_container_width=True) and not df_leads.empty:
+        if st.button("🔍 Ver detalle Mayo", key="btn_conv_may", use_container_width=True):
             df_may_all = df_leads[df_leads[col_mes_leads] == 'mayo'] if col_mes_leads else pd.DataFrame()
-            df_may_calif = df_may_all[df_may_all[col_calif].apply(es_calificado_check)] if col_calif and not df_may_all.empty else pd.DataFrame()
-            show_detalle_conversion("mayo", calif_mayo, total_mayo, df_may_calif, df_may_all)
+            show_detalle_conversion("mayo", df_may_all)
     with c4:
-        if st.button("🔍 Ver detalle Junio", key="btn_conv_jun", use_container_width=True) and not df_leads.empty:
+        if st.button("🔍 Ver detalle Junio", key="btn_conv_jun", use_container_width=True):
             df_jun_all = df_leads[df_leads[col_mes_leads] == 'junio'] if col_mes_leads else pd.DataFrame()
-            df_jun_calif = df_jun_all[df_jun_all[col_calif].apply(es_calificado_check)] if col_calif and not df_jun_all.empty else pd.DataFrame()
-            show_detalle_conversion("junio", calif_junio, total_junio, df_jun_calif, df_jun_all)
+            show_detalle_conversion("junio", df_jun_all)
     with c5:
-        if st.button("🔍 Ver detalle Julio", key="btn_conv_jul", use_container_width=True) and not df_leads.empty:
+        if st.button("🔍 Ver detalle Julio", key="btn_conv_jul", use_container_width=True):
             df_jul_all = df_leads[df_leads[col_mes_leads] == 'julio'] if col_mes_leads else pd.DataFrame()
-            df_jul_calif = df_jul_all[df_jul_all[col_calif].apply(es_calificado_check)] if col_calif and not df_jul_all.empty else pd.DataFrame()
-            show_detalle_conversion("julio", calif_julio, total_julio, df_jul_calif, df_jul_all)
+            show_detalle_conversion("julio", df_jul_all)
     with c6:
-        if st.button("🔍 Ver detalle Agosto", key="btn_conv_ago", use_container_width=True) and not df_leads.empty:
+        if st.button("🔍 Ver detalle Agosto", key="btn_conv_ago", use_container_width=True):
             df_ago_all = df_leads[df_leads[col_mes_leads] == 'agosto'] if col_mes_leads else pd.DataFrame()
-            df_ago_calif = df_ago_all[df_ago_all[col_calif].apply(es_calificado_check)] if col_calif and not df_ago_all.empty else pd.DataFrame()
-            show_detalle_conversion("agosto", calif_agosto, total_agosto, df_ago_calif, df_ago_all)
+            show_detalle_conversion("agosto", df_ago_all)
     with c7:
         if st.button("🔍 Ver detalle Septiembre", key="btn_conv_sep", use_container_width=True):
-            show_detalle_septiembre("conversion")
+            df_sep_all = df_leads[df_leads[col_mes_leads] == 'septiembre'] if col_mes_leads else pd.DataFrame()
+            show_detalle_conversion("septiembre", df_sep_all)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     # === INDICADOR 3: NEGOCIOS COTIZADOS (A-H según especificación) ===
     # Columna F (índice 5) = Valor
     # Columna G (índice 6) = Fecha de atribución mensual del negocio
-    df_cot = df_cotizaciones_raw.copy()
+    df_cot = kpi_quotes(df_cotizaciones_raw)
     cot_marzo = cot_abril = cot_mayo = cot_junio = cot_julio = cot_agosto = 0
-    cot_septiembre = KPI_SEPTIEMBRE_2026["valor_cotizado"]
+    cot_septiembre = 0
     
-    if not df_cot.empty and len(df_cot.columns) >= 7:
-        col_valor_cot = df_cot.columns[5]  # Columna F - Valor
-        col_fecha_cot = df_cot.columns[6]  # Columna G - Fecha de creación
-        
-        df_cot[col_valor_cot] = pd.to_numeric(df_cot[col_valor_cot], errors='coerce').fillna(0)
-        
-        # Extraer mes de la fecha
-        df_cot[col_fecha_cot] = pd.to_datetime(df_cot[col_fecha_cot], errors='coerce')
-        meses_es = {3: 'marzo', 4: 'abril', 5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto', 9: 'septiembre'}
-        df_cot['mes_nombre'] = df_cot[col_fecha_cot].dt.month.map(meses_es)
+    if not df_cot.empty and kpi_column(df_cot, "Valor") is not None:
+        col_valor_cot = kpi_column(df_cot, "Valor")
         
         cot_marzo = df_cot[df_cot['mes_nombre'] == 'marzo'][col_valor_cot].sum()
         cot_abril = df_cot[df_cot['mes_nombre'] == 'abril'][col_valor_cot].sum()
@@ -1750,6 +1856,7 @@ def render_kpis_mercadeo():
         cot_junio = df_cot[df_cot['mes_nombre'] == 'junio'][col_valor_cot].sum()
         cot_julio = df_cot[df_cot['mes_nombre'] == 'julio'][col_valor_cot].sum()
         cot_agosto = df_cot[df_cot['mes_nombre'] == 'agosto'][col_valor_cot].sum()
+        cot_septiembre = df_cot[df_cot['mes_nombre'] == 'septiembre'][col_valor_cot].sum()
     
     def format_currency(val):
         if val >= 1_000_000_000:
@@ -1815,80 +1922,43 @@ def render_kpis_mercadeo():
     c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_cot_mar", use_container_width=True):
-            # Filtrar cotizaciones de marzo por fecha
-            if not df_cot.empty and 'mes_nombre' in df_cot.columns:
-                df_cot_mar = df_cot[df_cot['mes_nombre'] == 'marzo']
-            else:
-                df_cot_mar = df_cotizaciones_raw
-            show_detalle_cotizaciones("marzo", cot_marzo, df_cot_mar)
+            df_cot_mar = df_cot[df_cot['mes_nombre'] == 'marzo']
+            show_detalle_cotizaciones("marzo", df_cot_mar)
     with c2:
         if st.button("🔍 Ver detalle Abril", key="btn_cot_abr", use_container_width=True):
-            # Filtrar cotizaciones de abril por fecha
-            if not df_cot.empty and 'mes_nombre' in df_cot.columns:
-                df_cot_abr = df_cot[df_cot['mes_nombre'] == 'abril']
-            else:
-                df_cot_abr = df_cotizaciones_raw
-            show_detalle_cotizaciones("abril", cot_abril, df_cot_abr)
+            df_cot_abr = df_cot[df_cot['mes_nombre'] == 'abril']
+            show_detalle_cotizaciones("abril", df_cot_abr)
     with c3:
         if st.button("🔍 Ver detalle Mayo", key="btn_cot_may", use_container_width=True):
-            # Filtrar cotizaciones de mayo por fecha
-            if not df_cot.empty and 'mes_nombre' in df_cot.columns:
-                df_cot_may = df_cot[df_cot['mes_nombre'] == 'mayo']
-            else:
-                df_cot_may = df_cotizaciones_raw
-            show_detalle_cotizaciones("mayo", cot_mayo, df_cot_may)
+            df_cot_may = df_cot[df_cot['mes_nombre'] == 'mayo']
+            show_detalle_cotizaciones("mayo", df_cot_may)
     with c4:
         if st.button("🔍 Ver detalle Junio", key="btn_cot_jun", use_container_width=True):
-            df_cot_jun = df_cot[df_cot['mes_nombre'] == 'junio'] if not df_cot.empty and 'mes_nombre' in df_cot.columns else df_cotizaciones_raw
-            show_detalle_cotizaciones("junio", cot_junio, df_cot_jun)
+            df_cot_jun = df_cot[df_cot['mes_nombre'] == 'junio']
+            show_detalle_cotizaciones("junio", df_cot_jun)
     with c5:
         if st.button("🔍 Ver detalle Julio", key="btn_cot_jul", use_container_width=True):
-            df_cot_jul = df_cot[df_cot['mes_nombre'] == 'julio'] if not df_cot.empty and 'mes_nombre' in df_cot.columns else df_cotizaciones_raw
-            show_detalle_cotizaciones("julio", cot_julio, df_cot_jul)
+            df_cot_jul = df_cot[df_cot['mes_nombre'] == 'julio']
+            show_detalle_cotizaciones("julio", df_cot_jul)
     with c6:
         if st.button("🔍 Ver detalle Agosto", key="btn_cot_ago", use_container_width=True):
-            df_cot_ago = df_cot[df_cot['mes_nombre'] == 'agosto'] if not df_cot.empty and 'mes_nombre' in df_cot.columns else df_cotizaciones_raw
-            show_detalle_cotizaciones("agosto", cot_agosto, df_cot_ago)
+            df_cot_ago = df_cot[df_cot['mes_nombre'] == 'agosto']
+            show_detalle_cotizaciones("agosto", df_cot_ago)
     with c7:
         if st.button("🔍 Ver detalle Septiembre", key="btn_cot_sep", use_container_width=True):
-            show_detalle_septiembre("cotizaciones")
+            df_cot_sep = df_cot[df_cot['mes_nombre'] == 'septiembre']
+            show_detalle_cotizaciones("septiembre", df_cot_sep)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     # === INDICADOR 4: NEGOCIOS FACTURADOS ===
     df_fac = df_facturacion_raw.copy()
     fac_marzo = fac_abril = fac_mayo = fac_junio = fac_julio = fac_agosto = 0
-    fac_septiembre = KPI_SEPTIEMBRE_2026["valor_facturado"]
+    fac_septiembre = 0
     col_marzo_fac = col_abril_fac = col_mayo_fac = col_junio_fac = col_julio_fac = col_agosto_fac = col_septiembre_fac = None
 
     def limpiar_valor_facturacion(serie):
-        if pd.api.types.is_numeric_dtype(serie):
-            return pd.to_numeric(serie, errors='coerce').fillna(0)
-
-        def normalizar_moneda(valor):
-            texto = str(valor or '').strip().replace('$', '').replace(' ', '')
-            if texto in {'', '-', '--'}:
-                return 0.0
-            texto = re.sub(r'[^0-9,.-]', '', texto)
-            if ',' in texto and '.' in texto:
-                # El separador que aparece de último se interpreta como decimal.
-                if texto.rfind(',') > texto.rfind('.'):
-                    texto = texto.replace('.', '').replace(',', '.')
-                else:
-                    texto = texto.replace(',', '')
-            elif ',' in texto:
-                partes = texto.split(',')
-                texto = ''.join(partes) if len(partes[-1]) == 3 else texto.replace(',', '.')
-            elif texto.count('.') > 1:
-                texto = texto.replace('.', '')
-            elif texto.count('.') == 1 and len(texto.rsplit('.', 1)[1]) == 3:
-                texto = texto.replace('.', '')
-            try:
-                return float(texto)
-            except ValueError:
-                return 0.0
-
-        return serie.fillna('').apply(normalizar_moneda)
+        return serie.map(kpi_amount).fillna(0)
     
     if not df_fac.empty:
         # Buscar columnas mensuales por nombre; la hoja usa abreviaturas como mar-26 y abr-26.
@@ -1908,22 +1978,6 @@ def render_kpis_mercadeo():
                 col_agosto_fac = col
             if col_lower.startswith(('sep-26', 'sept-26', 'septiembre-26')):
                 col_septiembre_fac = col
-        
-        # Fallback: usar posiciones L (11), M (12) y N (13) si no encontramos por nombre
-        if col_marzo_fac is None and len(df_fac.columns) >= 12:
-            col_marzo_fac = df_fac.columns[11]
-        if col_abril_fac is None and len(df_fac.columns) >= 13:
-            col_abril_fac = df_fac.columns[12]
-        if col_mayo_fac is None and len(df_fac.columns) >= 14:
-            col_mayo_fac = df_fac.columns[13]
-        if col_junio_fac is None and len(df_fac.columns) >= 15:
-            col_junio_fac = df_fac.columns[14]
-        if col_julio_fac is None and len(df_fac.columns) >= 16:
-            col_julio_fac = df_fac.columns[15]
-        if col_agosto_fac is None and len(df_fac.columns) >= 17:
-            col_agosto_fac = df_fac.columns[16]
-        if col_septiembre_fac is None and len(df_fac.columns) >= 18:
-            col_septiembre_fac = df_fac.columns[17]
         
         # Calcular totales
         if col_marzo_fac:
@@ -1945,9 +1999,8 @@ def render_kpis_mercadeo():
             df_fac[col_agosto_fac] = limpiar_valor_facturacion(df_fac[col_agosto_fac])
             fac_agosto = df_fac[col_agosto_fac].sum()
         if col_septiembre_fac:
-            # Normalizar la columna si ya existe, pero mantener el cierre SQL
-            # auditado como unica fuente del KPI para evitar doble conteo.
             df_fac[col_septiembre_fac] = limpiar_valor_facturacion(df_fac[col_septiembre_fac])
+            fac_septiembre = df_fac[col_septiembre_fac].sum()
     
     pct_fac_marzo = (fac_marzo / METAS["negocios_facturados"]) * 100 if METAS["negocios_facturados"] > 0 else 0
     pct_fac_abril = (fac_abril / METAS["negocios_facturados"]) * 100 if METAS["negocios_facturados"] > 0 else 0
@@ -2020,152 +2073,104 @@ def render_kpis_mercadeo():
     c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
     with c1:
         if st.button("🔍 Ver detalle Marzo", key="btn_fac_mar", use_container_width=True):
-            # Filtrar filas con valor en columna marzo
-            if col_marzo_fac and not df_fac.empty:
-                df_mar_fac = df_fac[df_fac[col_marzo_fac] > 0]
-            else:
-                df_mar_fac = df_facturacion_raw
-            show_detalle_facturacion("marzo", fac_marzo, df_mar_fac)
+            df_mar_fac = kpi_billing_detail(df_fac, col_marzo_fac)
+            show_detalle_facturacion("marzo", df_mar_fac)
     with c2:
         if st.button("🔍 Ver detalle Abril", key="btn_fac_abr", use_container_width=True):
-            # Filtrar filas con valor en columna abril
-            if col_abril_fac and not df_fac.empty:
-                df_abr_fac = df_fac[df_fac[col_abril_fac] > 0]
-            else:
-                df_abr_fac = df_facturacion_raw
-            show_detalle_facturacion("abril", fac_abril, df_abr_fac)
+            df_abr_fac = kpi_billing_detail(df_fac, col_abril_fac)
+            show_detalle_facturacion("abril", df_abr_fac)
     with c3:
         if st.button("🔍 Ver detalle Mayo", key="btn_fac_may", use_container_width=True):
-            # Filtrar filas con valor en columna mayo
-            if col_mayo_fac and not df_fac.empty:
-                df_may_fac = df_fac[df_fac[col_mayo_fac] > 0]
-            else:
-                df_may_fac = df_facturacion_raw
-            show_detalle_facturacion("mayo", fac_mayo, df_may_fac)
+            df_may_fac = kpi_billing_detail(df_fac, col_mayo_fac)
+            show_detalle_facturacion("mayo", df_may_fac)
     with c4:
         if st.button("🔍 Ver detalle Junio", key="btn_fac_jun", use_container_width=True):
-            df_jun_fac = df_fac[df_fac[col_junio_fac] > 0] if col_junio_fac and not df_fac.empty else df_facturacion_raw
-            show_detalle_facturacion("junio", fac_junio, df_jun_fac)
+            df_jun_fac = kpi_billing_detail(df_fac, col_junio_fac)
+            show_detalle_facturacion("junio", df_jun_fac)
     with c5:
         if st.button("🔍 Ver detalle Julio", key="btn_fac_jul", use_container_width=True):
-            df_jul_fac = df_fac[df_fac[col_julio_fac] > 0] if col_julio_fac and not df_fac.empty else df_facturacion_raw
-            show_detalle_facturacion("julio", fac_julio, df_jul_fac)
+            df_jul_fac = kpi_billing_detail(df_fac, col_julio_fac)
+            show_detalle_facturacion("julio", df_jul_fac)
     with c6:
         if st.button("🔍 Ver detalle Agosto", key="btn_fac_ago", use_container_width=True):
-            df_ago_fac = df_fac[df_fac[col_agosto_fac] > 0] if col_agosto_fac and not df_fac.empty else df_facturacion_raw
-            show_detalle_facturacion("agosto", fac_agosto, df_ago_fac)
+            df_ago_fac = kpi_billing_detail(df_fac, col_agosto_fac)
+            show_detalle_facturacion("agosto", df_ago_fac)
     with c7:
         if st.button("🔍 Ver detalle Septiembre", key="btn_fac_sep", use_container_width=True):
-            show_detalle_septiembre("facturacion")
+            df_sep_fac = kpi_billing_detail(df_fac, col_septiembre_fac)
+            show_detalle_facturacion("septiembre", df_sep_fac)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     # === TABLA DETALLE (OPCIONAL) ===
     st.markdown("<br>", unsafe_allow_html=True)
-    with st.expander("📋 Ver datos brutos históricos de Leads (Google Sheets)"):
-        st.caption("El cierre agregado de septiembre está disponible en su botón de detalle.")
-        st.dataframe(df_leads_raw, use_container_width=True, hide_index=True)
+    with st.expander("📋 Ver datos de Leads (Google Sheets)"):
+        st.caption("Cada botón de detalle muestra los registros del mes seleccionado.")
+        kpi_records_table(df_leads_raw, "0-136")
 
 @st.dialog("📊 Detalle: Leads nuevos cargados en HubSpot", width="large")
 def show_detalle_leads_mes(mes, df_filtrado):
-    st.write(f"**Mes:** {mes.capitalize()}")
-    st.write(f"**Total Leads:** {len(df_filtrado)}")
-    st.markdown("---")
-    st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
+    st.caption(f"{mes.capitalize()} {KPI_YEAR} · LEADS")
+    total = kpi_lead_total(mes, df_filtrado)
+    st.metric("Leads nuevos", total)
+    if total > len(df_filtrado):
+        st.info(
+            f"{len(df_filtrado)} registros disponibles en Sheets + "
+            f"{total - len(df_filtrado)} de ajuste manual autorizado. "
+            "El total histórico se conserva; el ajuste no tiene una ficha individual en la fuente."
+        )
+    if df_filtrado.empty:
+        st.info("No hay registros de este mes en la fuente disponible.")
+    else:
+        kpi_records_table(df_filtrado, "0-136")
+    kpi_source_link("LEADS")
 
 @st.dialog("📈 Detalle: Tasa de conversión lead a oportunidad", width="large")
-def show_detalle_conversion(mes, calificados, total, df_calif, df_total):
-    st.write(f"**Mes:** {mes.capitalize()}")
-    st.write(f"**Total Leads:** {total}")
-    st.write(f"**Leads Calificados:** {calificados}")
-    st.write(f"**Tasa de Conversión:** {(calificados/total*100):.1f}%" if total > 0 else "**Tasa:** 0%")
-    st.markdown("---")
-    tab1, tab2 = st.tabs(["Todos los Leads", "Solo Calificados"])
+def show_detalle_conversion(mes, df_total):
+    st.caption(f"{mes.capitalize()} {KPI_YEAR} · LEADS")
+    stage_col = kpi_column(df_total, "Etapa del lead")
+    df_calif = df_total[df_total[stage_col].map(kpi_qualified)] if stage_col is not None else df_total.iloc[0:0]
+    total, calificados = len(df_total), len(df_calif)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Leads", total)
+    c2.metric("Calificados", calificados)
+    c3.metric("Conversión", f"{(calificados / total * 100):.1f}%" if total else "0.0%")
+    tab1, tab2 = st.tabs([f"Todos los leads ({total})", f"Calificados ({calificados})"])
     with tab1:
-        st.dataframe(df_total, use_container_width=True, hide_index=True)
+        kpi_records_table(df_total, "0-136")
     with tab2:
-        st.dataframe(df_calif, use_container_width=True, hide_index=True)
+        kpi_records_table(df_calif, "0-136")
+    kpi_source_link("LEADS")
 
 @st.dialog("💰 Detalle: Negocios cotizados", width="large")
-def show_detalle_cotizaciones(mes, total_valor, df_filtrado):
-    st.write(f"**Mes:** {mes.capitalize()}")
-    st.write(f"**Valor Total Cotizado:** ${total_valor:,.0f}")
-    st.markdown("---")
-    st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
+def show_detalle_cotizaciones(mes, df_filtrado):
+    st.caption(f"{mes.capitalize()} {KPI_YEAR} · COTIZACIONES")
+    value_col = kpi_column(df_filtrado, "Valor")
+    amounts = df_filtrado[value_col].map(kpi_amount) if value_col is not None else pd.Series(dtype=float)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Negocios", len(df_filtrado))
+    c2.metric("Con valor", int((amounts.notna() & amounts.ne(0)).sum()))
+    c3.metric("Valor cotizado", kpi_cop(amounts.sum()))
+    if df_filtrado.empty:
+        st.info("No hay negocios de este mes en la fuente disponible.")
+    else:
+        kpi_records_table(df_filtrado, "0-3")
+    st.caption("La fecha de atribución determina el mes del KPI. Los importes vacíos se conservan sin valor.")
+    kpi_source_link("COTIZACIONES")
 
 @st.dialog("💵 Detalle: Negocios facturados", width="large")
-def show_detalle_facturacion(mes, total_valor, df_filtrado):
-    st.write(f"**Mes:** {mes.capitalize()}")
-    st.write(f"**Valor Total Facturado:** ${total_valor:,.0f}")
-    st.markdown("---")
-    st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
-
-@st.dialog("📌 Cierre auditado: Septiembre 2026", width="large")
-def show_detalle_septiembre(tipo):
-    datos = KPI_SEPTIEMBRE_2026
-
-    def valor_cop(valor):
-        return "$" + f"{valor:,.0f}".replace(",", ".")
-
-    st.caption(datos["fuente"])
-
-    if tipo == "leads":
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Leads nuevos", datos["leads"])
-        c2.metric("Calificados", datos["leads_calificados"])
-        c3.metric("Cumplimiento", f"{int((datos['leads'] / 80) * 100 + 0.5)}%")
-        tab_etapas, tab_propietarios = st.tabs(["Etapas", "Propietarios"])
-        with tab_etapas:
-            st.dataframe(
-                pd.DataFrame(
-                    [{"Etapa": etapa, "Leads": cantidad} for etapa, cantidad in datos["etapas_lead"].items()]
-                ),
-                use_container_width=True,
-                hide_index=True,
-            )
-        with tab_propietarios:
-            st.dataframe(
-                pd.DataFrame(
-                    [{"Propietario": propietario, "Leads": cantidad} for propietario, cantidad in datos["propietarios_lead"].items()]
-                ),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-    elif tipo == "conversion":
-        tasa = (datos["leads_calificados"] / datos["leads"] * 100) if datos["leads"] else 0
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Leads", datos["leads"])
-        c2.metric("Calificados", datos["leads_calificados"])
-        c3.metric("Conversión", f"{tasa:.1f}%")
-        st.dataframe(
-            pd.DataFrame(
-                [{"Etapa": etapa, "Leads": cantidad} for etapa, cantidad in datos["etapas_lead"].items()]
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    elif tipo == "cotizaciones":
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Negocios", datos["negocios"])
-        c2.metric("Con valor", datos["negocios_con_valor"])
-        c3.metric("Valor cotizado", valor_cop(datos["valor_cotizado"]))
-        st.dataframe(
-            pd.DataFrame(
-                [{"Origen empresa": origen, "Negocios": cantidad} for origen, cantidad in datos["origenes_negocio"].items()]
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    elif tipo == "facturacion":
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Empresas", datos["empresas_facturadas"])
-        c2.metric("Documentos", datos["documentos_facturacion"])
-        c3.metric("Líneas", datos["lineas_facturacion"])
-        c4.metric("Valor neto", valor_cop(datos["valor_facturado"]))
-        st.info("El valor es neto e incluye notas crédito del período.")
+def show_detalle_facturacion(mes, df_filtrado):
+    st.caption(f"{mes.capitalize()} {KPI_YEAR} · FACTURACION")
+    total = df_filtrado["Valor facturado (COP)"].sum()
+    c1, c2 = st.columns(2)
+    c1.metric("Empresas con movimientos", len(df_filtrado))
+    c2.metric("Valor neto facturado", kpi_cop(total))
+    if df_filtrado.empty:
+        st.info("No hay movimientos de este mes en la fuente disponible.")
+    else:
+        kpi_records_table(df_filtrado)
+    st.caption("Se muestran únicamente los valores del mes seleccionado. El total incluye ajustes y notas crédito.")
+    kpi_source_link("FACTURACION")
 
 def render_fidelizacion_roi():
     st.title("🤝 Fidelización y ROI")
