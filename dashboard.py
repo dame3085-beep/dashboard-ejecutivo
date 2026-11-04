@@ -59,6 +59,31 @@ def kpi_lead_total(month, frame):
     return max(len(frame), KPI_LEAD_TOTAL_OVERRIDES.get(kpi_text(month), 0))
 
 
+def kpi_lead_direction(value):
+    """Reporting convention: Angie is inbound and Daniel is outbound."""
+    adviser = " ".join(kpi_text(value).split())
+    if adviser == "angie" or (adviser.startswith("angie ") and "trujillo" in adviser.split()):
+        return "in"
+    if adviser == "daniel" or (adviser.startswith("daniel ") and "merino" in adviser.split()):
+        return "out"
+    return ""
+
+
+def kpi_lead_breakdown(frame):
+    # Column C is authoritative; the lowercase duplicate in O is only a fallback.
+    owner_columns = [column for column in frame.columns if kpi_text(column) == "propietario del lead"]
+    owner_columns.sort(key=lambda column: column != "Propietario del lead")
+    owners = pd.Series("", index=frame.index, dtype=object)
+    for column in owner_columns:
+        owners = owners.mask(owners.eq(""), frame[column].map(kpi_text))
+    directions = owners.map(kpi_lead_direction)
+    return {
+        "in": int(directions.eq("in").sum()),
+        "out": int(directions.eq("out").sum()),
+        "unknown": int(directions.eq("").sum()),
+    }
+
+
 def kpi_amount(value):
     if value is None or pd.isna(value) or str(value).strip() in {"", "-", "--", "$ -"}:
         return float("nan")
@@ -1458,6 +1483,14 @@ def render_kpis_mercadeo():
         font-size: 9px;
         font-weight: 600;
     }
+    .kpi-lead-split {
+        min-height: 24px;
+        font-size: 9px;
+        line-height: 1.35;
+        font-weight: 500;
+        letter-spacing: 0;
+        text-transform: none;
+    }
     .kpi-billing-card {
         position: relative;
         overflow: hidden;
@@ -1663,15 +1696,30 @@ def render_kpis_mercadeo():
         ("AGO", leads_agosto, pct_agosto, class_agosto, val_class_agosto, False),
         ("SEP", leads_septiembre, pct_septiembre, class_septiembre, val_class_septiembre, True),
     ]
-    meses_leads_html = "".join(
-        f'<div class="kpi-month-card{" is-latest" if is_latest else ""}">'
-        f'<div class="kpi-month-name">{mes}</div>'
-        f'<div class="kpi-month-metrics">'
-        f'<div class="kpi-month-metric"><span>Real</span><strong>{real}</strong></div>'
-        f'<div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{round_pct(pct)}%</strong></div>'
-        f'</div></div>'
-        for mes, real, pct, pct_class, value_class, is_latest in meses_leads
-    )
+    nombres_meses_leads = {name[:3].upper(): name for name in KPI_MONTH_NAMES.values()}
+    meses_leads_html = []
+    for mes, real, pct, pct_class, value_class, is_latest in meses_leads:
+        df_mes = (
+            df_leads[df_leads[col_mes_leads] == nombres_meses_leads[mes]]
+            if col_mes_leads else df_leads.iloc[0:0]
+        )
+        desglose = kpi_lead_breakdown(df_mes)
+        sin_clasificar = desglose["unknown"] + max(0, real - len(df_mes))
+        detalle = f'in: {desglose["in"]}, out: {desglose["out"]}'
+        if sin_clasificar:
+            detalle += f'<br>sin clasificar: {sin_clasificar}'
+        meses_leads_html.append(
+            f'<div class="kpi-month-card{" is-latest" if is_latest else ""}">'
+            f'<div class="kpi-month-name">{mes}</div>'
+            f'<div class="kpi-month-metrics">'
+            f'<div class="kpi-month-metric"><span>Real</span><strong>{real}</strong>'
+            '<small class="kpi-month-detail kpi-lead-split" '
+            'title="Por asesor registrado: Angie Trujillo = inbound; Daniel Meriño = outbound">'
+            f'{detalle}</small></div>'
+            f'<div class="kpi-month-metric {pct_class}"><span>Cumpl.</span><strong class="{value_class}">{round_pct(pct)}%</strong></div>'
+            f'</div></div>'
+        )
+    meses_leads_html = "".join(meses_leads_html)
     
     st.markdown(f"""
     <div class="kpi-card-mkt">
@@ -2135,6 +2183,13 @@ def show_detalle_leads_mes(mes, df_filtrado):
     st.caption(f"{mes.capitalize()} {KPI_YEAR} · LEADS")
     total = kpi_lead_total(mes, df_filtrado)
     st.metric("Leads nuevos", total)
+    desglose = kpi_lead_breakdown(df_filtrado)
+    sin_clasificar = desglose["unknown"] + max(0, total - len(df_filtrado))
+    detalle = f'in: {desglose["in"]}, out: {desglose["out"]}'
+    if sin_clasificar:
+        detalle += f", sin clasificar: {sin_clasificar}"
+    st.caption(detalle)
+    st.caption("Por asesor registrado: Angie Trujillo = inbound; Daniel Meriño = outbound.")
     if total > len(df_filtrado):
         st.info(
             f"{len(df_filtrado)} registros disponibles en Sheets + "
