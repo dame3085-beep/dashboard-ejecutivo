@@ -112,6 +112,28 @@ def kpi_billing_detail(frame, value_col):
     return result.loc[amounts.ne(0)].copy()
 
 
+def kpi_billing_columns(frame):
+    """Resolve monthly columns in both GViz text and XLSX date-header formats."""
+    labels = {name: month for month, name in KPI_MONTH_NAMES.items()}
+    labels.update({name[:3]: month for month, name in KPI_MONTH_NAMES.items()})
+    labels.update({"abrl": 4, "sept": 9, "set": 9, "setiembre": 9})
+    columns = {}
+    for column in frame.columns:
+        text = kpi_text(column)
+        match = re.fullmatch(r"([a-z]+)\.?[\s/_-]+(\d{2}|\d{4})", text)
+        if match:
+            year = int(match[2]) + (2000 if len(match[2]) == 2 else 0)
+            month = labels.get(match[1]) if year == KPI_YEAR else None
+        elif not isinstance(column, str) or re.match(r"^\d{4}-\d{2}-\d{2}", text):
+            date = kpi_date(column)
+            month = date.month if pd.notna(date) and date.year == KPI_YEAR else None
+        else:
+            month = None
+        if month in KPI_MONTH_NAMES:
+            columns[month] = column
+    return columns
+
+
 def kpi_cop(value):
     return "$" + f"{value:,.0f}".replace(",", ".")
 
@@ -369,12 +391,11 @@ def load_data():
     try:
         facturacion_url = (
             "https://docs.google.com/spreadsheets/d/1AQ9KX-gUW9VcSC3PypbsESPi_YZ939i_CBgVrft2xko/"
-            f"gviz/tq?tqx=out:csv&sheet=FACTURACION&cachebust={time.time_ns()}"
+            f"gviz/tq?tqx=out:csv&sheet=FACTURACION&headers=1&cachebust={time.time_ns()}"
         )
         df_facturacion_live = pd.read_csv(facturacion_url)
         if (kpi_column(df_facturacion_live, "RAZON SOCIAL") is not None
-                and any(re.fullmatch(r"(?:mar|abr|may|jun|jul|ago|sep)-26", kpi_text(col))
-                        for col in df_facturacion_live.columns)):
+                and set(KPI_MONTH_NAMES).issubset(kpi_billing_columns(df_facturacion_live))):
             df_facturacion = df_facturacion_live
     except Exception:
         pass
@@ -1960,24 +1981,25 @@ def render_kpis_mercadeo():
     def limpiar_valor_facturacion(serie):
         return serie.map(kpi_amount).fillna(0)
     
+    columnas_facturacion = kpi_billing_columns(df_fac)
+    meses_sin_columna = [
+        name.capitalize() for month, name in KPI_MONTH_NAMES.items()
+        if month not in columnas_facturacion
+    ]
+    if meses_sin_columna:
+        st.error(
+            "No se pudieron identificar los encabezados de facturación de: "
+            + ", ".join(meses_sin_columna)
+            + ". Recarga los datos. No se muestran ceros ni totales parciales como si fueran facturación real."
+        )
+        return
+
     if not df_fac.empty:
-        # Buscar columnas mensuales por nombre; la hoja usa abreviaturas como mar-26 y abr-26.
-        for col in df_fac.columns:
-            col_lower = str(col).strip().lower()
-            if col_lower.startswith(('mar-26', 'marzo-26')):
-                col_marzo_fac = col
-            if col_lower.startswith(('abr-26', 'abrl-26', 'abril-26')):
-                col_abril_fac = col
-            if col_lower.startswith(('may-26', 'mayo-26')):
-                col_mayo_fac = col
-            if col_lower.startswith(('jun-26', 'junio-26')):
-                col_junio_fac = col
-            if col_lower.startswith(('jul-26', 'julio-26')):
-                col_julio_fac = col
-            if col_lower.startswith(('ago-26', 'agosto-26')):
-                col_agosto_fac = col
-            if col_lower.startswith(('sep-26', 'sept-26', 'septiembre-26')):
-                col_septiembre_fac = col
+        # Both sources use the same month map, including typed Excel date headers.
+        (col_marzo_fac, col_abril_fac, col_mayo_fac, col_junio_fac,
+         col_julio_fac, col_agosto_fac, col_septiembre_fac) = (
+            columnas_facturacion[month] for month in KPI_MONTH_NAMES
+        )
         
         # Calcular totales
         if col_marzo_fac:
